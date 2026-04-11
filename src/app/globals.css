@@ -1,4 +1,55 @@
+@layer theme, base, components, utilities;
 @import "tailwindcss";
+
+:root {
+  --palette-web-bg: #352d40;
+  --palette-web-accent: #c584ff;
+  --palette-web-accent-icon: #6b3fa8;
+  --palette-web-shader-highlight: #c4a8e8;
+  --palette-web-name: #1c132459;
+  --palette-web-white: #ffffff;
+  --palette-web-muted: #ffffff66;
+  --palette-web-soft: #ffffff99;
+  --palette-web-label: #ffffff8c;
+  --palette-web-strong: #ffffffd1;
+  --palette-web-year: #ffffffa8;
+  --palette-web-tl-track: #ffffff26;
+  --palette-web-border: #ffffff38;
+  --palette-web-line-strong: #ffffffbf;
+  --palette-web-line-hover: #ffffffe6;
+  --palette-web-line-muted: #ffffff40;
+  --palette-web-scene-neutral: #c0c0c0;
+}
+
+@theme {
+  --font-sans: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+
+  --color-web-bg: var(--palette-web-bg);
+  --color-web-accent: var(--palette-web-accent);
+  --color-web-accent-icon: var(--palette-web-accent-icon);
+  --color-web-shader-highlight: var(--palette-web-shader-highlight);
+  --color-web-name: var(--palette-web-name);
+  --color-web-white: var(--palette-web-white);
+  --color-web-muted: var(--palette-web-muted);
+  --color-web-soft: var(--palette-web-soft);
+  --color-web-label: var(--palette-web-label);
+  --color-web-strong: var(--palette-web-strong);
+  --color-web-year: var(--palette-web-year);
+  --color-web-tl-track: var(--palette-web-tl-track);
+  --color-web-border: var(--palette-web-border);
+  --color-web-line-strong: var(--palette-web-line-strong);
+  --color-web-line-hover: var(--palette-web-line-hover);
+  --color-web-line-muted: var(--palette-web-line-muted);
+  --color-web-scene-neutral: var(--palette-web-scene-neutral);
+}
+
+@font-face {
+  font-family: "Blaak";
+  src: url("@/assets/fonts/BlaakBold_PERSONAL.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 * {
   margin: 0;
@@ -11,15 +62,13 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #352d40;
-  font-family:
-    var(--font-geist-sans),
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    Arial,
-    sans-serif;
+  background: var(--color-web-bg);
+}
+
+*,
+*::before,
+*::after {
+  font-family: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
 }
 
 #bg {
@@ -70,12 +119,14 @@ body {
   will-change: transform;
   opacity: 0;
   transition: opacity 0.9s ease;
+  margin-top: 15px;
 }
 
 .bg-name-text {
+  font-family:
+    "Blaak", var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
   font-weight: 700;
   font-size: clamp(90px, 20vw, 130px);
-  color: rgba(28, 19, 36, 0.349);
   line-height: 1;
   white-space: nowrap;
   user-select: none;
@@ -121,14 +172,12 @@ body {
 #intro-rule {
   width: 15px;
   height: 1px;
-  background: #fff;
   margin-bottom: 25px;
 }
 
 #intro-desc {
   font-size: 13px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.4);
   line-height: 1.6;
   margin-bottom: 25px;
   width: 50%;
@@ -139,7 +188,6 @@ body {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: #fff;
   cursor: pointer;
   border: none;
   background: transparent;
@@ -153,19 +201,15 @@ body {
   display: block;
   width: 100%;
   height: 1px;
-  background: rgba(255, 255, 255, 0.75);
+  background: var(--color-web-line-strong);
   position: absolute;
   bottom: 0;
   left: 0;
   transition: background 0.3s;
 }
 
-#explore-btn:hover {
-  color: #fff;
-}
-
 #explore-btn:hover::after {
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--color-web-line-hover);
 }
 
 #intro-right {
@@ -180,7 +224,6 @@ body {
 #intro-right-text {
   font-size: clamp(11px, 1vw, 13px);
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.6);
   line-height: 1.75;
   margin-bottom: 24px;
 }
@@ -191,7 +234,6 @@ body {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
   border: none;
   background: transparent;
@@ -204,12 +246,12 @@ body {
   display: block;
   width: 100%;
   height: 1px;
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--color-web-line-muted);
   margin-top: 4px;
 }
 
 #read-more:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--color-web-line-hover);
 }
 
 #ui {
@@ -217,7 +259,6 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 10;
-  color: #fff;
 }
 
 #brand {
@@ -255,7 +296,6 @@ body {
 #tl-bar {
   width: 260px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.15);
   position: relative;
 }
 
@@ -265,7 +305,6 @@ body {
   left: 0;
   height: 100%;
   width: 0%;
-  background: #c584ff;
   transition: width 0.15s linear;
 }
 
@@ -283,7 +322,6 @@ body {
 #sline {
   width: 52px;
   height: 1px;
-  background: #fff;
   opacity: 0.85;
   position: absolute;
   left: 0;
@@ -338,7 +376,6 @@ body {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.66);
   opacity: 0;
   transition:
     opacity 0.15s ease,
@@ -354,7 +391,6 @@ body {
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.82);
   opacity: 0;
   white-space: nowrap;
   user-select: none;
@@ -374,7 +410,6 @@ body {
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.82);
   opacity: 0;
   white-space: nowrap;
   user-select: none;
@@ -409,7 +444,6 @@ body {
   left: 5rem;
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -417,7 +451,6 @@ body {
   cursor: pointer;
   pointer-events: all;
   opacity: 0.7;
-  color: #c584ff;
   transition:
     opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     transform 0.3s cubic-bezier(0.19, 1, 0.22, 1);

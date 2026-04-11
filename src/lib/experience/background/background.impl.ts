@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { BG_FS, BG_VS } from "@/lib/experience/background/shaders";
+import { rootCssVarToHexInt } from "@/utils/rootCssColor";
 
 export type GretaBackground = {
   scene: THREE.Scene;
@@ -28,14 +29,13 @@ export function initGretaBackground(
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
 
-  // r128 index.html treated these hexes like raw RGB in the shader; modern Color(hex) decodes
-  // sRGB → linear and reads darker. LinearSRGBColorSpace keeps byte ratios as working-space RGB.
+  // Match @theme: --color-web-bg, --color-web-shader-highlight (LinearSRGB = legacy index.html look).
   const uColorBackground = new THREE.Color().setHex(
-    0x352d40,
+    rootCssVarToHexInt("--color-web-bg"),
     THREE.LinearSRGBColorSpace,
   );
   const uColorHighlight = new THREE.Color().setHex(
-    0xc4a8e8,
+    rootCssVarToHexInt("--color-web-shader-highlight"),
     THREE.LinearSRGBColorSpace,
   );
   renderer.setClearColor(uColorBackground, 1);

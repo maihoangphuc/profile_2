@@ -1,8 +1,10 @@
 import { SOCIAL_LINKS } from "@/constants/socialLinks";
+import { IconPause } from "@/icons/IconPause";
+import { IconPlay } from "@/icons/IconPlay";
 
 export default function ExperienceUi() {
   return (
-    <div id="ui">
+    <div id="ui" className="text-web-white">
       <div id="brand">
         Greta
         <br />
@@ -11,14 +13,14 @@ export default function ExperienceUi() {
 
       <div id="timeline">
         <span>JAN</span>
-        <div id="tl-bar">
-          <div id="tl-progress" />
+        <div id="tl-bar" className="bg-web-tl-track">
+          <div id="tl-progress" className="bg-web-accent" />
         </div>
         <span>DEC</span>
       </div>
 
       <div id="social">
-        <div id="sline" />
+        <div id="sline" className="bg-web-white" />
         {SOCIAL_LINKS.map((link, index) => (
           <a
             key={link.key}
@@ -34,30 +36,25 @@ export default function ExperienceUi() {
         ))}
       </div>
 
-      <div id="year-lbl">2019</div>
-      <div id="month-lbl">Jan</div>
-      <div id="month-lbl-ghost" aria-hidden="true">
+      <div id="year-lbl" className="text-web-year">
+        2019
+      </div>
+      <div id="month-lbl" className="text-web-strong">
+        Jan
+      </div>
+      <div id="month-lbl-ghost" className="text-web-strong" aria-hidden="true">
         Jan
       </div>
 
-      <div id="sound-btn" role="button" tabIndex={0} aria-label="Play or pause">
-        <svg
-          className="icon-play"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-          fill="currentColor"
-        >
-          <path d="M8 5.5v13l11-6.5-11-6.5Z" />
-        </svg>
-        <svg
-          className="icon-pause"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-          fill="currentColor"
-        >
-          <rect x="6.5" y="5.5" width="4.2" height="13" rx="1.1" />
-          <rect x="13.3" y="5.5" width="4.2" height="13" rx="1.1" />
-        </svg>
+      <div
+        id="sound-btn"
+        className="border border-web-border text-web-accent-icon"
+        role="button"
+        tabIndex={0}
+        aria-label="Play or pause"
+      >
+        <IconPlay />
+        <IconPause />
       </div>
 
       <div id="caption">

@@ -2,6 +2,11 @@ import * as THREE from "three";
 import { initGretaBackground } from "@/lib/experience/background/background";
 import { C, EVENTS, MONTHS, N, PH, PW } from "@/constants/experience";
 import { lerp, lerpPath } from "@/lib/experience/math";
+import {
+  readRootCssVar,
+  rootCssVarToHexInt,
+  rootCssVarToRgba,
+} from "@/utils/rootCssColor";
 
 type Dom = {
   bg: HTMLCanvasElement;
@@ -19,6 +24,17 @@ type Dom = {
   sline: HTMLElement;
   exploreBtn: HTMLElement;
 };
+
+const APP_FONT_CSS_VAR = "--font-roboto";
+
+function canvasFont(sizePx: number, weight: number | "bold" = 400): string {
+  const stack = getComputedStyle(document.documentElement)
+    .getPropertyValue(APP_FONT_CSS_VAR)
+    .trim();
+  const family = stack || "sans-serif";
+  const w = weight === "bold" ? "bold" : String(weight);
+  return `${w} ${sizePx}px ${family}`;
+}
 
 function getDom(): Dom {
   const must = <T extends HTMLElement>(id: string) => {
@@ -98,7 +114,7 @@ export function startExperience() {
     for (const p of particles) {
       pCtx.beginPath();
       pCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      pCtx.fillStyle = `rgba(210,195,230,${p.op})`;
+      pCtx.fillStyle = rootCssVarToRgba("--color-web-accent", p.op);
       pCtx.fill();
       p.x += p.vx + Math.sin(p.y * 0.02 + p.seed) * 0.6;
       p.y += p.vy + Math.cos(p.x * 0.02 + p.seed) * 0.3;
@@ -158,8 +174,8 @@ export function startExperience() {
     },
   );
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.3));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  scene.add(new THREE.AmbientLight(rootCssVarToHexInt("--color-web-white"), 0.3));
+  const sun = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 1.2);
   sun.position.set(5, 10, 7.5);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -170,26 +186,35 @@ export function startExperience() {
   sun.shadow.camera.top = 8;
   sun.shadow.camera.bottom = -8;
   scene.add(sun);
-  const back = new THREE.DirectionalLight(0xffffff, 0.6);
+  const back = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 0.6);
   back.position.set(-5, 3, -5);
   scene.add(back);
-  const rim1 = new THREE.DirectionalLight(0xffffff, 1.5);
+  const rim1 = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 1.5);
   rim1.position.set(-10, 5, -10);
   scene.add(rim1);
-  const rim2 = new THREE.DirectionalLight(0xffffff, 1.0);
+  const rim2 = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 1.0);
   rim2.position.set(10, 5, -10);
   scene.add(rim2);
 
   // Models (concurrent)
   let figureGroup: THREE.Group | null = null;
   const clayMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0xc0c0c0,
+    color: 0xffffff,
     roughness: 0.95,
     metalness: 0.0,
     reflectivity: 0.5,
     envMapIntensity: 0.5,
     clearcoat: 0.0,
   });
+
+  function syncClayMaterialColorFromCss() {
+    const hex =
+      rootCssVarToHexInt("--color-web-scene-neutral") ||
+      rootCssVarToHexInt("--palette-web-scene-neutral");
+    if (hex !== 0) clayMaterial.color.setHex(hex);
+  }
+
+  queueMicrotask(() => syncClayMaterialColorFromCss());
 
   async function loadModels() {
     const { GLTFLoader } =
@@ -216,6 +241,8 @@ export function startExperience() {
       loadGLB("/3d.glb"),
       loadGLB("/rock.glb"),
     ]);
+
+    syncClayMaterialColorFromCss();
 
     const group = new THREE.Group();
 
@@ -327,12 +354,12 @@ export function startExperience() {
       const ctx = capCanvas.getContext("2d");
       if (!ctx) continue;
       ctx.clearRect(0, 0, 1600, 1000);
-      ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-      ctx.font = "bold 36px Arial, sans-serif";
+      ctx.fillStyle = readRootCssVar("--color-web-line-strong");
+      ctx.font = canvasFont(36, "bold");
       ctx.fillText(ev.tag.toUpperCase(), 40, 520);
 
-      ctx.fillStyle = "rgba(255, 255, 255, 1.0)";
-      ctx.font = "bold 100px serif";
+      ctx.fillStyle = readRootCssVar("--color-web-white");
+      ctx.font = canvasFont(100, "bold");
       ev.body
         .split("\n")
         .forEach((line, idx) => ctx.fillText(line, 40, 640 + idx * 110));
