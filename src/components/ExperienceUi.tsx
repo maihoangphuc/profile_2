@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SOCIAL_LINKS } from "@/constants/socialLinks";
 import { IconPause } from "@/icons/IconPause";
 import { IconPlay } from "@/icons/IconPlay";
@@ -5,11 +6,16 @@ import { IconPlay } from "@/icons/IconPlay";
 export default function ExperienceUi() {
   return (
     <div id="ui" className="text-web-white">
-      <div id="brand">
-        Greta
+      <Link
+        id="brand"
+        href="/"
+        className="text-inherit no-underline"
+        aria-label="Hoang Phuc — home"
+      >
+        Hoang
         <br />
-        Thunberg
-      </div>
+        Phuc
+      </Link>
 
       <div id="timeline">
         <span>JAN</span>
@@ -44,6 +50,15 @@ export default function ExperienceUi() {
       </div>
       <div id="month-lbl-ghost" className="text-web-strong" aria-hidden="true">
         Jan
+      </div>
+
+      <div
+        id="model-load-pct"
+        className="text-web-strong model-loading"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        0
       </div>
 
       <div

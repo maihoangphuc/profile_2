@@ -4,7 +4,7 @@
 :root {
   --palette-web-bg: #352d40;
   --palette-web-accent: #c584ff;
-  --palette-web-accent-icon: #6b3fa8;
+  --palette-web-accent-icon: #ffffffe6;
   --palette-web-shader-highlight: #c4a8e8;
   --palette-web-name: #1c132459;
   --palette-web-white: #ffffff;
@@ -18,7 +18,7 @@
   --palette-web-line-strong: #ffffffbf;
   --palette-web-line-hover: #ffffffe6;
   --palette-web-line-muted: #ffffff40;
-  --palette-web-scene-neutral: #c0c0c0;
+  --palette-web-scene-neutral: #ffffff;
 }
 
 @theme {
@@ -78,6 +78,12 @@ body {
   height: 100%;
   z-index: 0;
   display: block;
+  transition: opacity 0.85s ease;
+}
+
+html.experience-loading #bg {
+  opacity: 0;
+  pointer-events: none;
 }
 
 #c {
@@ -95,6 +101,24 @@ body {
   height: 100%;
   z-index: 3;
   pointer-events: none;
+  transition: opacity 0.85s ease;
+}
+
+html.experience-loading #particles {
+  opacity: 0;
+}
+
+/* Until models finish loading, hide all copy except the load percentage */
+html.experience-loading #ui > *:not(#model-load-pct):not(#brand),
+html.experience-loading #intro-left,
+html.experience-loading #intro-right,
+html.experience-loading #bg-name {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html.experience-loading #model-load-pct {
+  opacity: 1;
 }
 
 #bg-name {
@@ -155,13 +179,14 @@ body {
   left: 5rem;
   bottom: 22%;
   z-index: 102;
-  width: 350px;
-  max-width: 90vw;
+  width: 400px;
+  max-width: 120vw;
   pointer-events: all;
   transition: opacity 0.8s ease;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  padding-left: 5rem;
 }
 
 #intro-left.hidden {
@@ -180,36 +205,47 @@ body {
   font-weight: 400;
   line-height: 1.6;
   margin-bottom: 25px;
-  width: 50%;
+  width: 100%;
+  padding-left: 2rem;
 }
 
 #explore-btn {
   display: inline-block;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  font-family:
+    "Blaak", var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(11px, 1.05vw, 12px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
   cursor: pointer;
   border: none;
   background: transparent;
-  padding: 0 0 8px 0;
+  padding: 0 0 9px 0;
   position: relative;
   align-self: flex-end;
+  text-align: right;
 }
 
 #explore-btn::after {
   content: "";
   display: block;
-  width: 100%;
+  font-family: inherit;
+  width: calc(100% + 2.75rem);
   height: 1px;
-  background: var(--color-web-line-strong);
+  background: var(--color-web-label);
   position: absolute;
   bottom: 0;
-  left: 0;
-  transition: background 0.3s;
+  right: 0;
+  left: auto;
+  opacity: 0.45;
+  transition:
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.3s ease;
 }
 
 #explore-btn:hover::after {
-  background: var(--color-web-line-hover);
+  width: calc(100% + 5.5rem);
+  background: var(--color-web-white);
+  opacity: 0.85;
 }
 
 #intro-right {
@@ -265,12 +301,18 @@ body {
   position: absolute;
   top: 5rem;
   left: 5rem;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
-  letter-spacing: 0em;
-  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-transform: none;
   opacity: 0.9;
+  pointer-events: auto;
+  color: inherit;
+}
+
+#brand:hover {
+  opacity: 1;
 }
 
 #timeline {
@@ -431,6 +473,47 @@ body {
 
 #month-lbl-ghost.leave-left {
   animation: month-leave-left 1050ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+#model-load-pct {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateY(30%);
+  bottom: 0;
+  font-size: clamp(46px, 6.6vw, 84px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  z-index: 2;
+}
+
+#model-load-pct.model-loading {
+  opacity: 1;
+}
+
+#model-load-pct.model-loading:not(.model-load-exit) {
+  transition: opacity 0.35s ease;
+}
+
+@keyframes model-load-slide-down {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(30%);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(calc(100% + 2.5rem));
+  }
+}
+
+#model-load-pct.model-load-exit {
+  animation: model-load-slide-down 0.7s cubic-bezier(0.32, 0, 0.2, 1) forwards;
 }
 
 #year-lbl.date-show {

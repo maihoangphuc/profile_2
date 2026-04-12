@@ -23,7 +23,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${roboto.variable} ${roboto.className} h-full antialiased`}
+      className={`${roboto.variable} ${roboto.className} h-full antialiased experience-loading`}
     >
       <body className="min-h-full">{children}</body>
     </html>

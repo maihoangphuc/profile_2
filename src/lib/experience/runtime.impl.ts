@@ -12,6 +12,7 @@ type Dom = {
   bg: HTMLCanvasElement;
   c: HTMLCanvasElement;
   particles: HTMLCanvasElement;
+  modelLoadPct: HTMLElement;
   month: HTMLElement;
   monthGhost: HTMLElement;
   timeline: HTMLElement;
@@ -36,6 +37,12 @@ function canvasFont(sizePx: number, weight: number | "bold" = 400): string {
   return `${w} ${sizePx}px ${family}`;
 }
 
+/** Smooth 0→1 with zero slope at ends: no “snap” like linear, no long ease-out tail. */
+function smoothstep01(t: number) {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+}
+
 function getDom(): Dom {
   const must = <T extends HTMLElement>(id: string) => {
     const el = document.getElementById(id);
@@ -47,6 +54,7 @@ function getDom(): Dom {
     bg: must<HTMLCanvasElement>("bg"),
     c: must<HTMLCanvasElement>("c"),
     particles: must<HTMLCanvasElement>("particles"),
+    modelLoadPct: must("model-load-pct"),
     month: must("month-lbl"),
     monthGhost: must("month-lbl-ghost"),
     timeline: must("timeline"),
@@ -174,8 +182,13 @@ export function startExperience() {
     },
   );
 
-  scene.add(new THREE.AmbientLight(rootCssVarToHexInt("--color-web-white"), 0.3));
-  const sun = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 1.2);
+  scene.add(
+    new THREE.AmbientLight(rootCssVarToHexInt("--color-web-white"), 0.3),
+  );
+  const sun = new THREE.DirectionalLight(
+    rootCssVarToHexInt("--color-web-white"),
+    1.2,
+  );
   sun.position.set(5, 10, 7.5);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -186,13 +199,22 @@ export function startExperience() {
   sun.shadow.camera.top = 8;
   sun.shadow.camera.bottom = -8;
   scene.add(sun);
-  const back = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 0.6);
+  const back = new THREE.DirectionalLight(
+    rootCssVarToHexInt("--color-web-white"),
+    0.6,
+  );
   back.position.set(-5, 3, -5);
   scene.add(back);
-  const rim1 = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 1.5);
+  const rim1 = new THREE.DirectionalLight(
+    rootCssVarToHexInt("--color-web-white"),
+    1.5,
+  );
   rim1.position.set(-10, 5, -10);
   scene.add(rim1);
-  const rim2 = new THREE.DirectionalLight(rootCssVarToHexInt("--color-web-white"), 1.0);
+  const rim2 = new THREE.DirectionalLight(
+    rootCssVarToHexInt("--color-web-white"),
+    1.0,
+  );
   rim2.position.set(10, 5, -10);
   scene.add(rim2);
 
@@ -203,9 +225,21 @@ export function startExperience() {
     roughness: 0.95,
     metalness: 0.0,
     reflectivity: 0.5,
-    envMapIntensity: 0.5,
+    envMapIntensity: 0.65,
     clearcoat: 0.0,
   });
+  // Merged body mesh: hem occludes direct light → a hard dark band on the pants (not fixable via shadow receive).
+  // Wrapped diffuse lifts concave / grazing regions without changing lights for the rest of the scene.
+  const CLAY_DIFFUSE_WRAP = 0.5;
+  const clayDiffuseWrapScale = (1 + CLAY_DIFFUSE_WRAP).toFixed(2);
+  clayMaterial.onBeforeCompile = (shader) => {
+    const needle =
+      "const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {\n\tfloat dotNL = saturate( dot( geometryNormal, directLight.direction ) );";
+    const wrapped = `const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {\n\tfloat dotNL = saturate( ( dot( geometryNormal, directLight.direction ) + ${CLAY_DIFFUSE_WRAP.toFixed(2)} ) / ${clayDiffuseWrapScale} );`;
+    if (!shader.fragmentShader.includes(needle)) return;
+    shader.fragmentShader = shader.fragmentShader.replace(needle, wrapped);
+  };
+  clayMaterial.customProgramCacheKey = () => `clay-wrap-${CLAY_DIFFUSE_WRAP}`;
 
   function syncClayMaterialColorFromCss() {
     const hex =
@@ -216,7 +250,26 @@ export function startExperience() {
 
   queueMicrotask(() => syncClayMaterialColorFromCss());
 
+  let modelLoadTargetPct = 0;
+  /** Ramps up toward xhr `modelLoadTargetPct` so big network jumps do not snap the UI. */
+  let modelLoadRealFloor = 0;
+  /** Soft follower: never below real xhr %, creeps up toward real+headroom so UI does not freeze. */
+  let modelLoadCrawlPct = 0;
+  let modelLoadDisplayPct = 0;
+  let lastRenderedLoadPct = -1;
+  let lastModelLoadUiMs = 0;
+
   async function loadModels() {
+    const pctEl = dom.modelLoadPct;
+    modelLoadTargetPct = 0;
+    modelLoadRealFloor = 0;
+    modelLoadCrawlPct = 0;
+    modelLoadDisplayPct = 0;
+    lastRenderedLoadPct = -1;
+    lastModelLoadUiMs = performance.now();
+    pctEl.textContent = "0";
+    pctEl.classList.add("model-loading");
+
     const { GLTFLoader } =
       await import("three/examples/jsm/loaders/GLTFLoader.js");
     const loader = new GLTFLoader();
@@ -230,10 +283,62 @@ export function startExperience() {
       parser.textureLoader = tl;
       return { name: "EXPERIENCE_texture_loader_compat" };
     });
-    const loadGLB = (url: string) =>
+
+    const glbUrls = ["/3d.glb", "/rock.glb"] as const;
+    type GlbUrl = (typeof glbUrls)[number];
+    const fileProgress: Partial<
+      Record<GlbUrl, { loaded: number; total: number }>
+    > = {};
+
+    const refreshModelLoadTarget = () => {
+      let sumLoaded = 0;
+      let sumTotal = 0;
+      let anyWithoutTotal = false;
+      for (const u of glbUrls) {
+        const p = fileProgress[u];
+        if (!p) continue;
+        if (p.total > 0) {
+          sumLoaded += p.loaded;
+          sumTotal += p.total;
+        } else if (p.loaded > 0) {
+          anyWithoutTotal = true;
+        }
+      }
+      let next: number;
+      if (sumTotal > 0) {
+        next = Math.min(99, (sumLoaded / sumTotal) * 100);
+      } else if (anyWithoutTotal) {
+        const started = glbUrls.filter(
+          (u) => fileProgress[u] && fileProgress[u]!.loaded > 0,
+        ).length;
+        next = Math.min(99, (started / glbUrls.length) * 55);
+      } else {
+        next = 0;
+      }
+      modelLoadTargetPct = Math.max(modelLoadTargetPct, next);
+    };
+
+    const loadGLB = (url: GlbUrl) =>
       new Promise<import("three/examples/jsm/loaders/GLTFLoader.js").GLTF>(
         (resolve, reject) => {
-          loader.load(url, resolve, undefined, reject);
+          loader.load(
+            url,
+            (gltf) => {
+              const prev = fileProgress[url];
+              fileProgress[url] = {
+                loaded: prev?.total && prev.total > 0 ? prev.total : 1,
+                total: prev?.total && prev.total > 0 ? prev.total : 1,
+              };
+              refreshModelLoadTarget();
+              resolve(gltf);
+            },
+            (xhr) => {
+              const total = xhr.lengthComputable ? xhr.total : 0;
+              fileProgress[url] = { loaded: xhr.loaded, total };
+              refreshModelLoadTarget();
+            },
+            reject,
+          );
         },
       );
 
@@ -241,6 +346,8 @@ export function startExperience() {
       loadGLB("/3d.glb"),
       loadGLB("/rock.glb"),
     ]);
+
+    modelLoadTargetPct = Math.max(modelLoadTargetPct, 99);
 
     syncClayMaterialColorFromCss();
 
@@ -251,7 +358,9 @@ export function startExperience() {
         const mesh = child as THREE.Mesh;
         mesh.material = clayMaterial;
         mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        // One merged body mesh: shadow-map receive draws a hard hem line on the pants. Skip receive
+        // on the figure only; sun shading (N·L) still models form, and the rock still gets the cast.
+        mesh.receiveShadow = false;
       }
     });
     figure.scene.scale.setScalar(2.5);
@@ -423,6 +532,13 @@ export function startExperience() {
   let isDragging = false;
   let lastX = 0;
   let introActive = true;
+  /** True while the post-explore entrance animation is running. */
+  let experienceEntryActive = false;
+  let experienceEntryStartMs = 0;
+  const EXPERIENCE_ENTRY_MS = 1850;
+  /** Virtual scroll endpoints for the “scroll up into place” panel motion. */
+  let entryScrollFrom = 0;
+  let entryScrollTo = 0;
   let isPaused = false;
   let scrolled = false;
   let scrollCurrent = 0;
@@ -516,6 +632,10 @@ export function startExperience() {
 
     const enterExperience = () => {
       introActive = false;
+      experienceEntryActive = true;
+      experienceEntryStartMs = performance.now();
+      entryScrollTo = scrollTarget;
+      entryScrollFrom = scrollTarget - 8;
       dom.introLeft.classList.add("hidden");
       dom.introRight.classList.add("hidden");
       dom.bgName.classList.add("hidden");
@@ -556,7 +676,58 @@ export function startExperience() {
   let raf = 0;
   function animate() {
     raf = requestAnimationFrame(animate);
+
+    if (
+      dom.modelLoadPct.classList.contains("model-loading") &&
+      !dom.modelLoadPct.classList.contains("model-load-exit")
+    ) {
+      const nowMs = performance.now();
+      const dt = Math.min(
+        0.05,
+        Math.max(1 / 144, (nowMs - lastModelLoadUiMs) / 1000),
+      );
+      lastModelLoadUiMs = nowMs;
+
+      const real = Math.min(99, modelLoadTargetPct);
+      const up = real - modelLoadRealFloor;
+      if (up > 0) {
+        modelLoadRealFloor += Math.min(up, dt * 24);
+      } else {
+        modelLoadRealFloor = real;
+      }
+      modelLoadRealFloor = Math.min(99, modelLoadRealFloor);
+      const basis = modelLoadRealFloor;
+      modelLoadCrawlPct = Math.max(modelLoadCrawlPct, basis);
+      const slackAboveReal =
+        basis >= 99 ? 0 : basis >= 94 ? 99 - basis : basis >= 55 ? 10 : 16;
+      const ceiling = Math.min(99, basis + slackAboveReal);
+      if (modelLoadCrawlPct < ceiling) {
+        const crawlRate = modelLoadCrawlPct >= 68 ? 22 : 17;
+        modelLoadCrawlPct = Math.min(
+          ceiling,
+          modelLoadCrawlPct + dt * crawlRate,
+        );
+      }
+      modelLoadCrawlPct = Math.min(99, modelLoadCrawlPct);
+      const followK = 1 - Math.exp(-dt * 9);
+      modelLoadDisplayPct +=
+        (modelLoadCrawlPct - modelLoadDisplayPct) * followK;
+      modelLoadDisplayPct = Math.min(99, modelLoadDisplayPct);
+      const shown = Math.min(99, Math.round(modelLoadDisplayPct));
+      if (shown !== lastRenderedLoadPct) {
+        lastRenderedLoadPct = shown;
+        dom.modelLoadPct.textContent = String(shown);
+      }
+    }
+
     if (isPaused) return;
+
+    let experienceEntryProgress = 1;
+    if (experienceEntryActive) {
+      const elapsed = performance.now() - experienceEntryStartMs;
+      experienceEntryProgress = Math.min(1, elapsed / EXPERIENCE_ENTRY_MS);
+      if (experienceEntryProgress >= 1) experienceEntryActive = false;
+    }
 
     drawParticles();
     scrollVel *= 0.82;
@@ -568,11 +739,24 @@ export function startExperience() {
     cam.lookAt(0, 0.3, 0);
 
     const t = Date.now() * 0.001;
-    const sn = scrollCurrent / (N - 1);
+    const entryScrollBlend =
+      !introActive && experienceEntryProgress < 1
+        ? smoothstep01(experienceEntryProgress)
+        : 1;
+    let scrollForLayout = scrollCurrent;
+    if (!introActive && experienceEntryProgress < 1) {
+      scrollForLayout = lerp(
+        entryScrollFrom,
+        entryScrollTo,
+        entryScrollBlend,
+      );
+    }
+    const sn = scrollForLayout / (N - 1);
 
     if (bg.camera) {
       const TAU = Math.PI * 2;
-      const baseYaw = introActive ? 0 : sn * TAU * 1.25;
+      const orbitBlend = introActive ? 0 : entryScrollBlend;
+      const baseYaw = introActive ? 0 : sn * TAU * 1.25 * orbitBlend;
       const yaw = baseYaw + scrollVelVis * 0.15;
       const radius = 5;
       bg.camera.position.set(Math.sin(yaw) * radius, 0, Math.cos(yaw) * radius);
@@ -582,22 +766,39 @@ export function startExperience() {
 
     if (figureGroup) {
       const targetRotY = introActive ? 0 : sn * -Math.PI * 2;
-      figRotY = lerp(figRotY, targetRotY, 0.08);
-      figureGroup.rotation.y = figRotY;
-      figureGroup.rotation.x = 0;
-
       const targetPosY = introActive ? -0.8 : -0.8 - sn * 1.2;
-      figPosY = lerp(figPosY, targetPosY, 0.04);
-      figureGroup.position.set(0, figPosY + Math.sin(t * 0.6) * 0.015, 0);
-
       const targetScale = introActive ? 2.6 : 2.6 + sn * 0.6;
-      figScale = lerp(figScale, targetScale, 0.04);
-      figureGroup.scale.setScalar(figScale);
+
+      if (!introActive && experienceEntryProgress < 1) {
+        const endSn = entryScrollTo / (N - 1);
+        const baseRotAtEnd = endSn * -Math.PI * 2;
+        const spin = (1 - entryScrollBlend) * Math.PI * 2;
+        const fixedPosY = -0.8 - endSn * 1.2;
+        const fixedScale = 2.6 + endSn * 0.6;
+        figPosY = fixedPosY;
+        figScale = fixedScale;
+        figureGroup.rotation.x = 0;
+        figureGroup.rotation.y = baseRotAtEnd + spin;
+        figRotY = baseRotAtEnd;
+        figureGroup.position.set(0, fixedPosY, 0);
+        figureGroup.scale.setScalar(fixedScale);
+      } else {
+        figRotY = lerp(figRotY, targetRotY, 0.08);
+        figureGroup.rotation.y = figRotY;
+        figureGroup.rotation.x = 0;
+
+        figPosY = lerp(figPosY, targetPosY, 0.04);
+        figureGroup.position.set(0, figPosY + Math.sin(t * 0.6) * 0.015, 0);
+
+        figScale = lerp(figScale, targetScale, 0.04);
+        figureGroup.scale.setScalar(figScale);
+      }
     }
 
+    const scrollForEdge = Math.max(0, Math.min(N - 1, scrollForLayout));
     const edgeFade = Math.min(
-      scrollCurrent / 0.3,
-      (N - 1 - scrollCurrent) / 0.3,
+      scrollForEdge / 0.3,
+      (N - 1 - scrollForEdge) / 0.3,
       1.0,
     );
     const stretchVal = Math.max(-1, Math.min(1, scrollVelVis * 45)) * edgeFade;
@@ -607,7 +808,10 @@ export function startExperience() {
     const intersects = raycaster.intersectObjects(visibleMeshes);
     const hoveredMesh =
       intersects.length > 0 ? (intersects[0].object as THREE.Mesh) : null;
-    const centerIndex = Math.max(0, Math.min(N - 1, Math.round(scrollCurrent)));
+    const centerIndex = Math.max(
+      0,
+      Math.min(N - 1, Math.round(scrollForLayout)),
+    );
 
     panels.forEach((p, i) => {
       p.hoverVal ??= 0;
@@ -626,7 +830,7 @@ export function startExperience() {
       }
 
       const spacing = 0.65;
-      const delta = (scrollCurrent - i) * spacing;
+      const delta = (scrollForLayout - i) * spacing;
       const step = C + delta;
       if (step < -0.1 || step > 14.1) {
         p.mesh.visible = false;
@@ -666,7 +870,10 @@ export function startExperience() {
 
     if (!introActive) {
       const fi = centerIndex;
-      const progress = scrollCurrent / (N - 1);
+      const progress = Math.max(
+        0,
+        Math.min(1, scrollForLayout / (N - 1)),
+      );
       dom.tlProgress.style.width = progress * 100 + "%";
 
       const monthIndex = fi % 12;
@@ -729,10 +936,27 @@ export function startExperience() {
 
   void loadModels()
     .then(() => {
+      document.documentElement.classList.remove("experience-loading");
       dom.bgName.classList.add("model-ready");
+      dom.modelLoadPct.setAttribute("aria-busy", "false");
+      dom.modelLoadPct.textContent = "99";
+      dom.modelLoadPct.classList.add("model-load-exit");
+      let exitFinished = false;
+      const finishLoadHud = () => {
+        if (exitFinished) return;
+        exitFinished = true;
+        dom.modelLoadPct.classList.remove("model-loading", "model-load-exit");
+      };
+      dom.modelLoadPct.addEventListener("animationend", finishLoadHud, {
+        once: true,
+      });
+      window.setTimeout(finishLoadHud, 1200);
     })
     .catch((err: unknown) => {
       console.error("Failed to load 3D models", err);
+      document.documentElement.classList.remove("experience-loading");
+      dom.modelLoadPct.setAttribute("aria-busy", "false");
+      dom.modelLoadPct.classList.remove("model-loading", "model-load-exit");
     });
   animate();
 
