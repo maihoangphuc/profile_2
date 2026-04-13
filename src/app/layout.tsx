@@ -10,9 +10,9 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: "Greta Thunberg — 2019",
+  title: "MHP",
   description:
-    "An illustrated timeline of how Greta Thunberg rose from a solo campaigner to the leader of a global movement in 2019.",
+    "Frontend Developer passionate about technology and crafting intuitive, visually appealing user interfaces.",
 };
 
 export default function RootLayout({

@@ -179,24 +179,7 @@ export function startExperience() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
 
-  // HDR env (lazy loader)
-  const pmremGenerator = new THREE.PMREMGenerator(renderer);
-  pmremGenerator.compileEquirectangularShader();
-  void import("three/examples/jsm/loaders/RGBELoader.js").then(
-    ({ RGBELoader }) => {
-      new RGBELoader()
-        .setDataType(THREE.UnsignedByteType)
-        .load(
-          "https://threejs.org/examples/textures/equirectangular/royal_esplanade_1k.hdr",
-          (texture) => {
-            const envMap = pmremGenerator.fromEquirectangular(texture).texture;
-            scene.environment = envMap;
-            texture.dispose();
-            pmremGenerator.dispose();
-          },
-        );
-    },
-  );
+
 
   scene.add(
     new THREE.AmbientLight(rootCssVarToHexInt("--color-web-white"), 0.3),
@@ -921,32 +904,31 @@ export function startExperience() {
       );
       lastModelLoadUiMs = nowMs;
 
+      // modelLoadTargetPct là % thật (từ GLTFLoader), dao động 0 -> 100.
       const real = Math.min(99, modelLoadTargetPct);
-      const up = real - modelLoadRealFloor;
-      if (up > 0) {
-        modelLoadRealFloor += Math.min(up, dt * 24);
-      } else {
-        modelLoadRealFloor = real;
-      }
-      modelLoadRealFloor = Math.min(99, modelLoadRealFloor);
-      const basis = modelLoadRealFloor;
-      modelLoadCrawlPct = Math.max(modelLoadCrawlPct, basis);
-      const slackAboveReal =
-        basis >= 99 ? 0 : basis >= 94 ? 99 - basis : basis >= 55 ? 10 : 16;
-      const ceiling = Math.min(99, basis + slackAboveReal);
-      if (modelLoadCrawlPct < ceiling) {
-        const crawlRate = modelLoadCrawlPct >= 68 ? 22 : 17;
-        modelLoadCrawlPct = Math.min(
-          ceiling,
-          modelLoadCrawlPct + dt * crawlRate,
-        );
-      }
-      modelLoadCrawlPct = Math.min(99, modelLoadCrawlPct);
-      const followK = 1 - Math.exp(-dt * 9);
-      modelLoadDisplayPct +=
-        (modelLoadCrawlPct - modelLoadDisplayPct) * followK;
-      modelLoadDisplayPct = Math.min(99, modelLoadDisplayPct);
-      const shown = Math.min(99, Math.round(modelLoadDisplayPct));
+
+      // 1. Chảy số "thật" (realFloor) - bám theo real nhưng không được nhảy vọt.
+      const floorK = 1 - Math.exp(-dt * 6);
+      modelLoadRealFloor += (real - modelLoadRealFloor) * floorK;
+
+      // 2. Chảy số "ảo" (crawl) - luôn tiến về phía trước một chút để không bị khựng khi mạng đứng.
+      // Càng gần 99 crawlRate càng chậm lại.
+      const crawlRemaining = 99 - modelLoadCrawlPct;
+      const baseCrawlSpeed = modelLoadCrawlPct < 50 ? 15 : 8;
+      const crawlRate = (crawlRemaining / 99) * baseCrawlSpeed + 0.5;
+      modelLoadCrawlPct = Math.min(99, modelLoadCrawlPct + dt * crawlRate);
+
+      // 3. Display là giá trị lớn nhất giữa thực (đã làm mượt) và ảo (crawling).
+      const targetDisplay = Math.max(modelLoadRealFloor, modelLoadCrawlPct);
+
+      // 4. Nội suy display cuối cùng để chuyển động mượt mà hoàn toàn.
+      const followK = 1 - Math.exp(-dt * 4);
+      modelLoadDisplayPct += (targetDisplay - modelLoadDisplayPct) * followK;
+
+      // Càng về sau số càng chậm nên cần đảm bảo display không bao giờ giảm.
+      modelLoadDisplayPct = Math.min(99, Math.max(modelLoadDisplayPct, lastRenderedLoadPct));
+
+      const shown = Math.floor(modelLoadDisplayPct);
       if (shown !== lastRenderedLoadPct) {
         lastRenderedLoadPct = shown;
         dom.modelLoadPct.textContent = String(shown);
