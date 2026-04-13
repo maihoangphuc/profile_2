@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { SOCIAL_LINKS } from "@/constants/socialLinks";
 import { IconPause } from "@/icons/IconPause";
 import { IconPlay } from "@/icons/IconPlay";
@@ -6,16 +5,16 @@ import { IconPlay } from "@/icons/IconPlay";
 export default function ExperienceUi() {
   return (
     <div id="ui" className="text-web-white">
-      <Link
+      <button
         id="brand"
-        href="/"
-        className="text-inherit no-underline"
-        aria-label="Hoang Phuc — home"
+        type="button"
+        className="cursor-pointer border-0 bg-transparent p-0 text-left font-inherit text-inherit no-underline"
+        aria-label="Hoang Phuc — back to explore intro"
       >
         Hoang
         <br />
         Phuc
-      </Link>
+      </button>
 
       <div id="timeline">
         <span>JAN</span>

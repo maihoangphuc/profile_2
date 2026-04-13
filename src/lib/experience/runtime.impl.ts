@@ -18,12 +18,14 @@ type Dom = {
   timeline: HTMLElement;
   tlProgress: HTMLElement;
   introLeft: HTMLElement;
+  introRuleTrack: HTMLElement;
   introRight: HTMLElement;
   bgName: HTMLElement;
   soundBtn: HTMLElement;
   social: HTMLElement;
   sline: HTMLElement;
   exploreBtn: HTMLElement;
+  brand: HTMLElement;
 };
 
 const APP_FONT_CSS_VAR = "--font-roboto";
@@ -37,10 +39,31 @@ function canvasFont(sizePx: number, weight: number | "bold" = 400): string {
   return `${w} ${sizePx}px ${family}`;
 }
 
-/** Smooth 0→1 with zero slope at ends: no “snap” like linear, no long ease-out tail. */
-function smoothstep01(t: number) {
+/** Gentle in/out (zero 1st & 2nd derivative at 0 and 1) for explore entry. */
+function smootherstep01(t: number) {
   const x = Math.min(1, Math.max(0, t));
-  return x * x * (3 - 2 * x);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+/**
+ * Góc tương đương 0 (k·2π) sao cho |đích − start| ≥ một vòng — luôn thấy model xoay
+ * khi thoát Explore; tránh đường thẳng quá ngắn trên trục Euler.
+ */
+function exitRotationTargetAtLeastOneTurn(start: number): number {
+  const TAU = Math.PI * 2;
+  if (!Number.isFinite(start)) return 0;
+  const mNear = Math.round(start / TAU);
+  let best: number | null = null;
+  let bestD = Infinity;
+  for (let k = mNear - 60; k <= mNear + 60; k++) {
+    const e = k * TAU;
+    const d = Math.abs(e - start);
+    if (d + 1e-9 >= TAU && d < bestD) {
+      bestD = d;
+      best = e;
+    }
+  }
+  return best ?? 0;
 }
 
 function getDom(): Dom {
@@ -60,12 +83,14 @@ function getDom(): Dom {
     timeline: must("timeline"),
     tlProgress: must("tl-progress"),
     introLeft: must("intro-left"),
+    introRuleTrack: must("intro-rule-track"),
     introRight: must("intro-right"),
     bgName: must("bg-name"),
     soundBtn: must("sound-btn"),
     social: must("social"),
     sline: must("sline"),
     exploreBtn: must("explore-btn"),
+    brand: must("brand"),
   };
 }
 
@@ -489,6 +514,9 @@ export function startExperience() {
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
       });
 
       const capMat = new THREE.ShaderMaterial({
@@ -515,11 +543,16 @@ export function startExperience() {
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
       });
 
       const mesh = new THREE.Mesh(sharedGeo, mat);
+      mesh.renderOrder = 0;
       const capMesh = new THREE.Mesh(capGeo, capMat);
-      capMesh.position.z = 0.01;
+      capMesh.renderOrder = 2;
+      capMesh.position.z = 0.04;
       const pivot = new THREE.Group();
       pivot.add(mesh);
       pivot.add(capMesh);
@@ -535,7 +568,9 @@ export function startExperience() {
   /** True while the post-explore entrance animation is running. */
   let experienceEntryActive = false;
   let experienceEntryStartMs = 0;
-  const EXPERIENCE_ENTRY_MS = 1850;
+  const EXPERIENCE_ENTRY_MS = 2650;
+  /** After Explore: timeline/year/month only after entry motion (~{@link EXPERIENCE_ENTRY_MS}). */
+  let timelineDatesVisible = false;
   /** Virtual scroll endpoints for the “scroll up into place” panel motion. */
   let entryScrollFrom = 0;
   let entryScrollTo = 0;
@@ -556,6 +591,26 @@ export function startExperience() {
   let nextMonthSwitchAt = 0;
   const MONTH_SWITCH_COOLDOWN_MS = 620;
 
+  /** Brand → intro: carousel + figure exit before UI returns. */
+  let experienceExitActive = false;
+  let experienceExitStartMs = 0;
+  /** Kể cả đã scroll hay chưa — panel âm + model về intro chạy song song, chậm mượt. */
+  const EXPERIENCE_EXIT_MS = 4200;
+  /** Panel opacity: fade sau khi scroll đã bắt đầu (đọc được chuyển động). */
+  const EXPERIENCE_EXIT_PANEL_FADE_DELAY = 0.18;
+  /** Always undershoot by at least this many scroll index units, then clamp so path goes slightly negative. */
+  const EXPERIENCE_EXIT_MIN_SCROLL_TRAVEL = 3.5;
+  /** Max negative scroll (index space) for smooth rewind when đã scroll xa. */
+  const EXPERIENCE_EXIT_SCROLL_DEEP_CAP = -0.5;
+  /** Scroll: tới undershoot âm rồi về 0 (smootherstep — mượt đầu/cuối từng pha). */
+  const EXPERIENCE_EXIT_UNDERSHOOT_SPLIT = 0.52;
+  let exitScroll0 = 0;
+  let exitFigRot0 = 0;
+  /** Đích nội suy (≡ 0 mod 2π), quãng đường từ exitFigRot0 luôn ≥ một vòng. */
+  let exitFigRot1 = 0;
+  let exitFigPosY0 = -0.8;
+  let exitFigScale0 = 2.6;
+
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2(-10, -10);
 
@@ -571,8 +626,86 @@ export function startExperience() {
       '.soc[data-key="fb"]',
     );
     let activeSocialLink = socDefault ?? links[0];
-    if (activeSocialLink)
-      requestAnimationFrame(() => positionSocialLine(activeSocialLink, 0.6));
+    let introLineRevealTimer: number | undefined;
+    /** `performance.now()` when intro-rule / explore / social line CSS run should finish. */
+    let introLinesAnimEndMs = 0;
+    let exploreCommitTimer: number | undefined;
+    let exploreCommitPending = false;
+    let timelineRevealTimer: number | undefined;
+    function introLinesDurationMs() {
+      const raw = getComputedStyle(document.documentElement)
+        .getPropertyValue("--intro-lines-duration")
+        .trim();
+      const n = parseFloat(raw);
+      if (!Number.isFinite(n)) return 2540;
+      const ms = raw.endsWith("ms") ? Math.round(n) : Math.round(n * 1000);
+      return ms + 40;
+    }
+
+    /** Intro rule + Explore underline + social line: cùng `--intro-lines-duration`, kết thúc đồng thời. */
+    function runIntroPageLineEffects() {
+      if (introLineRevealTimer !== undefined) {
+        clearTimeout(introLineRevealTimer);
+        introLineRevealTimer = undefined;
+      }
+      dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
+      void dom.introLeft.offsetHeight;
+      dom.social.classList.remove("social-line-entry");
+      void dom.sline.offsetHeight;
+
+      const wf = 0.6;
+
+      if (links.length >= 2) {
+        const first = links[0]!;
+        const last = links[links.length - 1]!;
+        activeSocialLink = first;
+        const xFirst = first.offsetLeft;
+        const xLast = last.offsetLeft;
+        dom.social.style.setProperty("--sline-x-from", `${xLast}px`);
+        dom.social.style.setProperty("--sline-x-to", `${xFirst}px`);
+        dom.social.style.setProperty("--sline-x-wf", String(wf));
+      } else if (links.length === 1) {
+        activeSocialLink = links[0]!;
+        dom.sline.style.transition = "none";
+        positionSocialLine(activeSocialLink, wf);
+        void dom.sline.offsetHeight;
+        dom.sline.style.transition = "";
+      }
+
+      const tw = dom.introRuleTrack.offsetWidth;
+      dom.introRuleTrack.style.setProperty(
+        "--intro-rule-final-scale",
+        tw > 0 ? String(15 / tw) : "0.04",
+      );
+
+      dom.introLeft.classList.add("lines-animated", "intro-lines-reveal");
+      const revealMs = introLinesDurationMs();
+      introLinesAnimEndMs = performance.now() + revealMs;
+      introLineRevealTimer = window.setTimeout(() => {
+        introLineRevealTimer = undefined;
+        dom.introLeft.classList.remove("intro-lines-reveal");
+      }, revealMs);
+
+      if (links.length >= 2) {
+        dom.sline.addEventListener(
+          "animationend",
+          (ev) => {
+            if (
+              ev.target !== dom.sline ||
+              ev.animationName !== "social-line-draw"
+            )
+              return;
+            if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
+            dom.social.classList.remove("social-line-entry");
+          },
+          { once: true },
+        );
+        dom.social.classList.add("social-lines-animated", "social-line-entry");
+      } else if (links.length === 1) {
+        dom.social.classList.add("social-lines-animated");
+      }
+    }
+
     links.forEach((el) => {
       el.addEventListener("mouseenter", () => positionSocialLine(el, 1));
       el.addEventListener("focus", () => {
@@ -592,7 +725,7 @@ export function startExperience() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (!scrolled) scrolled = true;
-      if (introActive) return;
+      if (introActive || experienceExitActive) return;
       scrollVel += e.deltaY * 0.00045;
     };
     window.addEventListener("wheel", onWheel, { passive: false });
@@ -608,7 +741,7 @@ export function startExperience() {
     const onMouseMove = (e: MouseEvent) => {
       mouse.x = (e.clientX / innerWidth) * 2 - 1;
       mouse.y = -(e.clientY / innerHeight) * 2 + 1;
-      if (isDragging && !introActive) {
+      if (isDragging && !introActive && !experienceExitActive) {
         const dx = lastX - e.clientX;
         lastX = e.clientX;
         scrollVel += dx * 0.002;
@@ -631,17 +764,82 @@ export function startExperience() {
     });
 
     const enterExperience = () => {
-      introActive = false;
-      experienceEntryActive = true;
-      experienceEntryStartMs = performance.now();
-      entryScrollTo = scrollTarget;
-      entryScrollFrom = scrollTarget - 8;
-      dom.introLeft.classList.add("hidden");
-      dom.introRight.classList.add("hidden");
-      dom.bgName.classList.add("hidden");
-      dom.timeline.classList.add("date-show");
-      document.getElementById("year-lbl")?.classList.add("date-show");
-      dom.month.classList.add("date-show");
+      if (!introActive) return;
+      if (exploreCommitPending) return;
+      exploreCommitPending = true;
+      if (introLineRevealTimer !== undefined) {
+        clearTimeout(introLineRevealTimer);
+        introLineRevealTimer = undefined;
+      }
+      const waitMs = Math.max(
+        0,
+        Math.ceil(introLinesAnimEndMs - performance.now()),
+      );
+      const proceed = () => {
+        exploreCommitTimer = undefined;
+        exploreCommitPending = false;
+        introActive = false;
+        experienceEntryActive = true;
+        experienceEntryStartMs = performance.now();
+        entryScrollTo = scrollTarget;
+        entryScrollFrom = scrollTarget - 8;
+        if (introLineRevealTimer !== undefined) {
+          clearTimeout(introLineRevealTimer);
+          introLineRevealTimer = undefined;
+        }
+        if (timelineRevealTimer !== undefined) {
+          clearTimeout(timelineRevealTimer);
+          timelineRevealTimer = undefined;
+        }
+        timelineDatesVisible = false;
+        dom.timeline.classList.remove("date-show");
+        document.getElementById("year-lbl")?.classList.remove("date-show");
+        dom.month.classList.remove("date-show");
+        dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
+        dom.introLeft.classList.add("hidden");
+        dom.introRight.classList.add("hidden");
+        dom.bgName.classList.add("hidden");
+        lastMonthIndex = null;
+        lastFiForMonth = null;
+        pendingMonthIndex = null;
+        pendingFiForMonth = null;
+        nextMonthSwitchAt = 0;
+        dom.month.classList.remove("enter-left", "enter-right");
+        dom.monthGhost.classList.remove("leave-left", "leave-right");
+        timelineRevealTimer = window.setTimeout(() => {
+          timelineRevealTimer = undefined;
+          timelineDatesVisible = true;
+          dom.timeline.classList.add("date-show");
+          document.getElementById("year-lbl")?.classList.add("date-show");
+          dom.month.classList.add("date-show");
+        }, EXPERIENCE_ENTRY_MS);
+      };
+      if (waitMs > 0) {
+        exploreCommitTimer = window.setTimeout(proceed, waitMs);
+      } else {
+        proceed();
+      }
+    };
+
+    const returnToExploreIntro = () => {
+      if (introActive || experienceExitActive) return;
+      if (exploreCommitTimer !== undefined) {
+        clearTimeout(exploreCommitTimer);
+        exploreCommitTimer = undefined;
+      }
+      exploreCommitPending = false;
+      if (timelineRevealTimer !== undefined) {
+        clearTimeout(timelineRevealTimer);
+        timelineRevealTimer = undefined;
+      }
+      timelineDatesVisible = false;
+      if (introLineRevealTimer !== undefined) {
+        clearTimeout(introLineRevealTimer);
+        introLineRevealTimer = undefined;
+      }
+      dom.timeline.classList.remove("date-show");
+      document.getElementById("year-lbl")?.classList.remove("date-show");
+      dom.month.classList.remove("date-show");
       lastMonthIndex = null;
       lastFiForMonth = null;
       pendingMonthIndex = null;
@@ -649,8 +847,24 @@ export function startExperience() {
       nextMonthSwitchAt = 0;
       dom.month.classList.remove("enter-left", "enter-right");
       dom.monthGhost.classList.remove("leave-left", "leave-right");
+
+      exitScroll0 = scrollCurrent;
+      /** Góc Euler thật trên mesh (kể cả giữa chừng entry spin) — không dùng figRotY có thể lệch. */
+      exitFigRot0 = figureGroup ? figureGroup.rotation.y : figRotY;
+      exitFigRot1 = exitRotationTargetAtLeastOneTurn(exitFigRot0);
+      exitFigPosY0 = figPosY;
+      exitFigScale0 = figScale;
+      experienceExitStartMs = performance.now();
+      experienceExitActive = true;
+      experienceEntryActive = false;
+      scrolled = false;
+      scrollVel = 0;
+      scrollVelVis = 0;
+      scrollTarget = 0;
     };
+
     dom.exploreBtn.addEventListener("click", enterExperience);
+    dom.brand.addEventListener("click", returnToExploreIntro);
 
     const onResize = () => {
       cam.aspect = innerWidth / innerHeight;
@@ -661,14 +875,23 @@ export function startExperience() {
     };
     window.addEventListener("resize", onResize);
 
-    return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mouseup", onMouseUp);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("resize", onResize);
-      dom.exploreBtn.removeEventListener("click", enterExperience);
-      dom.soundBtn.removeEventListener("click", togglePaused);
+    return {
+      teardown: () => {
+        if (introLineRevealTimer !== undefined)
+          clearTimeout(introLineRevealTimer);
+        if (exploreCommitTimer !== undefined) clearTimeout(exploreCommitTimer);
+        if (timelineRevealTimer !== undefined)
+          clearTimeout(timelineRevealTimer);
+        window.removeEventListener("wheel", onWheel);
+        window.removeEventListener("mousedown", onMouseDown);
+        window.removeEventListener("mouseup", onMouseUp);
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("resize", onResize);
+        dom.exploreBtn.removeEventListener("click", enterExperience);
+        dom.brand.removeEventListener("click", returnToExploreIntro);
+        dom.soundBtn.removeEventListener("click", togglePaused);
+      },
+      runIntroPageLineEffects,
     };
   }
 
@@ -729,11 +952,40 @@ export function startExperience() {
       if (experienceEntryProgress >= 1) experienceEntryActive = false;
     }
 
+    let exitProgress = 0;
+    if (experienceExitActive) {
+      exitProgress = Math.min(
+        1,
+        (performance.now() - experienceExitStartMs) / EXPERIENCE_EXIT_MS,
+      );
+    }
+
     drawParticles();
-    scrollVel *= 0.82;
-    scrollTarget = Math.max(0, Math.min(N - 1, scrollTarget + scrollVel));
-    scrollCurrent = lerp(scrollCurrent, scrollTarget, 0.12);
-    scrollVelVis = lerp(scrollVelVis, scrollVel, 0.1);
+    if (experienceExitActive) {
+      const s0 = exitScroll0;
+      const sp = EXPERIENCE_EXIT_UNDERSHOOT_SPLIT;
+      const deep = Math.min(
+        s0 - EXPERIENCE_EXIT_MIN_SCROLL_TRAVEL,
+        EXPERIENCE_EXIT_SCROLL_DEEP_CAP,
+      );
+      if (exitProgress < sp) {
+        const u = smootherstep01(exitProgress / sp);
+        scrollCurrent = lerp(s0, deep, u);
+      } else {
+        const u = smootherstep01((exitProgress - sp) / (1 - sp));
+        scrollCurrent = lerp(deep, 0, u);
+      }
+      scrollTarget = 0;
+      scrollVel = 0;
+      const rewindStrength = Math.min(1, (Math.abs(s0) + Math.abs(deep)) / 14);
+      scrollVelVis =
+        -0.022 * rewindStrength * (1 - smootherstep01(exitProgress));
+    } else {
+      scrollVel *= 0.82;
+      scrollTarget = Math.max(0, Math.min(N - 1, scrollTarget + scrollVel));
+      scrollCurrent = lerp(scrollCurrent, scrollTarget, 0.12);
+      scrollVelVis = lerp(scrollVelVis, scrollVel, 0.1);
+    }
 
     cam.position.set(0, 0.5, 11);
     cam.lookAt(0, 0.3, 0);
@@ -741,15 +993,11 @@ export function startExperience() {
     const t = Date.now() * 0.001;
     const entryScrollBlend =
       !introActive && experienceEntryProgress < 1
-        ? smoothstep01(experienceEntryProgress)
+        ? smootherstep01(experienceEntryProgress)
         : 1;
     let scrollForLayout = scrollCurrent;
-    if (!introActive && experienceEntryProgress < 1) {
-      scrollForLayout = lerp(
-        entryScrollFrom,
-        entryScrollTo,
-        entryScrollBlend,
-      );
+    if (!introActive && experienceEntryProgress < 1 && !experienceExitActive) {
+      scrollForLayout = lerp(entryScrollFrom, entryScrollTo, entryScrollBlend);
     }
     const sn = scrollForLayout / (N - 1);
 
@@ -765,33 +1013,48 @@ export function startExperience() {
     bg.material.uniforms.uOffsetX.value = 0;
 
     if (figureGroup) {
-      const targetRotY = introActive ? 0 : sn * -Math.PI * 2;
-      const targetPosY = introActive ? -0.8 : -0.8 - sn * 1.2;
-      const targetScale = introActive ? 2.6 : 2.6 + sn * 0.6;
-
-      if (!introActive && experienceEntryProgress < 1) {
-        const endSn = entryScrollTo / (N - 1);
-        const baseRotAtEnd = endSn * -Math.PI * 2;
-        const spin = (1 - entryScrollBlend) * Math.PI * 2;
-        const fixedPosY = -0.8 - endSn * 1.2;
-        const fixedScale = 2.6 + endSn * 0.6;
-        figPosY = fixedPosY;
-        figScale = fixedScale;
-        figureGroup.rotation.x = 0;
-        figureGroup.rotation.y = baseRotAtEnd + spin;
-        figRotY = baseRotAtEnd;
-        figureGroup.position.set(0, fixedPosY, 0);
-        figureGroup.scale.setScalar(fixedScale);
-      } else {
-        figRotY = lerp(figRotY, targetRotY, 0.08);
+      if (experienceExitActive) {
+        const m = smootherstep01(exitProgress);
+        /**
+         * Nội suy tới `exitFigRot1` (≡ 0 mod 2π) với quãng ≥ một vòng — không đứng yên
+         * khi góc gần 0; kết thúc pose intro vẫn là 0 khi exit xong (snap ở khối dưới).
+         */
+        figRotY = THREE.MathUtils.lerp(exitFigRot0, exitFigRot1, m);
         figureGroup.rotation.y = figRotY;
         figureGroup.rotation.x = 0;
-
-        figPosY = lerp(figPosY, targetPosY, 0.04);
-        figureGroup.position.set(0, figPosY + Math.sin(t * 0.6) * 0.015, 0);
-
-        figScale = lerp(figScale, targetScale, 0.04);
+        figPosY = THREE.MathUtils.lerp(exitFigPosY0, -0.8, m);
+        figScale = THREE.MathUtils.lerp(exitFigScale0, 2.6, m);
+        figureGroup.position.set(0, figPosY, 0);
         figureGroup.scale.setScalar(figScale);
+      } else {
+        const targetRotY = introActive ? 0 : sn * -Math.PI * 2;
+        const targetPosY = introActive ? -0.8 : -0.8 - sn * 1.2;
+        const targetScale = introActive ? 2.6 : 2.6 + sn * 0.6;
+
+        if (!introActive && experienceEntryProgress < 1) {
+          const endSn = entryScrollTo / (N - 1);
+          const baseRotAtEnd = endSn * -Math.PI * 2;
+          const spin = (1 - entryScrollBlend) * Math.PI * 2;
+          const fixedPosY = -0.8 - endSn * 1.2;
+          const fixedScale = 2.6 + endSn * 0.6;
+          figPosY = fixedPosY;
+          figScale = fixedScale;
+          figureGroup.rotation.x = 0;
+          figureGroup.rotation.y = baseRotAtEnd + spin;
+          figRotY = baseRotAtEnd;
+          figureGroup.position.set(0, fixedPosY, 0);
+          figureGroup.scale.setScalar(fixedScale);
+        } else {
+          figRotY = lerp(figRotY, targetRotY, 0.08);
+          figureGroup.rotation.y = figRotY;
+          figureGroup.rotation.x = 0;
+
+          figPosY = lerp(figPosY, targetPosY, 0.04);
+          figureGroup.position.set(0, figPosY + Math.sin(t * 0.6) * 0.015, 0);
+
+          figScale = lerp(figScale, targetScale, 0.04);
+          figureGroup.scale.setScalar(figScale);
+        }
       }
     }
 
@@ -813,10 +1076,30 @@ export function startExperience() {
       Math.min(N - 1, Math.round(scrollForLayout)),
     );
 
+    const panelExitMul = experienceExitActive
+      ? (() => {
+          const delayed = Math.max(
+            0,
+            (exitProgress - EXPERIENCE_EXIT_PANEL_FADE_DELAY) /
+              (1 - EXPERIENCE_EXIT_PANEL_FADE_DELAY),
+          );
+          return 1 - smootherstep01(delayed);
+        })()
+      : 1;
+
+    /** Sau điểm undershoot: không render panel (kể cả khi scroll từ xa về 0). */
+    const exitHidePanelsAfterUndershoot =
+      experienceExitActive && exitProgress >= EXPERIENCE_EXIT_UNDERSHOOT_SPLIT;
+
     panels.forEach((p, i) => {
       p.hoverVal ??= 0;
       p.targetHover =
-        p.mesh === hoveredMesh && !introActive && i === centerIndex ? 1 : 0;
+        p.mesh === hoveredMesh &&
+        !introActive &&
+        !experienceExitActive &&
+        i === centerIndex
+          ? 1
+          : 0;
       p.hoverVal = lerp(p.hoverVal, p.targetHover, 0.1);
       p.mat.uniforms.uHover.value = p.hoverVal;
       p.mat.uniforms.uTime.value = t;
@@ -824,6 +1107,12 @@ export function startExperience() {
       p.capMat.uniforms.uTime.value = t;
 
       if (introActive) {
+        p.mesh.visible = false;
+        p.capMesh.visible = false;
+        return;
+      }
+
+      if (exitHidePanelsAfterUndershoot) {
         p.mesh.visible = false;
         p.capMesh.visible = false;
         return;
@@ -847,7 +1136,7 @@ export function startExperience() {
         tr.x += tr.x * spread;
       }
 
-      const op = tr.op * fadeOp;
+      const op = tr.op * fadeOp * panelExitMul;
       p.pivot.position.set(tr.x, tr.y, tr.z);
       const distCenter = Math.min(1, Math.abs(step - C) / 3);
       const totalRoll = 0.6 * distCenter * -1;
@@ -860,20 +1149,19 @@ export function startExperience() {
 
       const absDist = Math.abs(step - C);
       const textFade = Math.max(0, 1.0 - absDist * 3.0);
-      const textOp = op * textFade;
+      const textOp = op * textFade * panelExitMul;
       p.capMat.uniforms.uOpacity.value = textOp;
       p.capMat.uniforms.uCurvature.value = tr.cv * 0.3;
       p.capMat.uniforms.uStretch.value = stretchVal;
       p.capMesh.scale.set(tr.W / PW, tr.H / PH, 1);
+      const sideT = Math.min(1, Math.abs(step - C) / 3);
+      p.capMesh.position.z = 0.04 + sideT * 0.14;
       p.capMesh.visible = textOp > 0.01;
     });
 
-    if (!introActive) {
+    if (!introActive && !experienceExitActive) {
       const fi = centerIndex;
-      const progress = Math.max(
-        0,
-        Math.min(1, scrollForLayout / (N - 1)),
-      );
+      const progress = Math.max(0, Math.min(1, scrollForLayout / (N - 1)));
       dom.tlProgress.style.width = progress * 100 + "%";
 
       const monthIndex = fi % 12;
@@ -884,7 +1172,7 @@ export function startExperience() {
         lastMonthIndex = monthIndex;
         lastFiForMonth = fi;
         dom.month.textContent = MONTHS[monthIndex] ?? "Jan";
-        dom.month.classList.add("date-show");
+        if (timelineDatesVisible) dom.month.classList.add("date-show");
         nextMonthSwitchAt = performance.now();
       } else {
         if (monthIndex !== lastMonthIndex) {
@@ -900,7 +1188,7 @@ export function startExperience() {
           pendingMonthIndex = null;
           pendingFiForMonth = null;
           dom.month.textContent = MONTHS[lastMonthIndex] ?? "Jan";
-          dom.month.classList.add("date-show");
+          if (timelineDatesVisible) dom.month.classList.add("date-show");
         } else if (canSwitch) {
           const targetMonthIndex = pendingMonthIndex!;
           const targetFi = pendingFiForMonth ?? fi;
@@ -917,7 +1205,7 @@ export function startExperience() {
           dom.monthGhost.classList.add(dir > 0 ? "leave-left" : "leave-right");
 
           dom.month.textContent = MONTHS[targetMonthIndex] ?? "Jan";
-          dom.month.classList.add("date-show");
+          if (timelineDatesVisible) dom.month.classList.add("date-show");
           dom.month.classList.remove("enter-left", "enter-right");
           void dom.month.offsetWidth;
           dom.month.classList.add(dir > 0 ? "enter-left" : "enter-right");
@@ -926,13 +1214,58 @@ export function startExperience() {
       }
     }
 
+    if (experienceExitActive && exitProgress >= 1) {
+      experienceExitActive = false;
+      introActive = true;
+      figRotY = 0;
+      figPosY = -0.8;
+      figScale = 2.6;
+      if (figureGroup) {
+        figureGroup.rotation.set(0, 0, 0);
+        figureGroup.position.set(0, -0.8, 0);
+        figureGroup.scale.setScalar(2.6);
+      }
+      scrollCurrent = 0;
+      scrollTarget = 0;
+      scrollVel = 0;
+      scrollVelVis = 0;
+      dom.tlProgress.style.width = "0%";
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          completeExploreReturnToIntroUi();
+        });
+      });
+    }
+
     bg.render();
     renderer.render(scene, cam);
   }
 
   initParticles();
   buildPanels();
-  const teardownEvents = bindEvents();
+  const experienceEvents = bindEvents();
+
+  function completeExploreReturnToIntroUi() {
+    dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
+    void dom.introLeft.offsetHeight;
+    dom.introLeft.classList.remove("hidden");
+    dom.introRight.classList.remove("hidden");
+    dom.bgName.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        experienceEvents.runIntroPageLineEffects();
+      });
+    });
+  }
+
+  /** Intro copy is `opacity: 0` until `experience-loading` is removed — run lines after it is visible. */
+  function scheduleIntroLinesWhenUiVisible() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        experienceEvents.runIntroPageLineEffects();
+      });
+    });
+  }
 
   void loadModels()
     .then(() => {
@@ -951,18 +1284,20 @@ export function startExperience() {
         once: true,
       });
       window.setTimeout(finishLoadHud, 1200);
+      scheduleIntroLinesWhenUiVisible();
     })
     .catch((err: unknown) => {
       console.error("Failed to load 3D models", err);
       document.documentElement.classList.remove("experience-loading");
       dom.modelLoadPct.setAttribute("aria-busy", "false");
       dom.modelLoadPct.classList.remove("model-loading", "model-load-exit");
+      scheduleIntroLinesWhenUiVisible();
     });
   animate();
 
   return () => {
     cancelAnimationFrame(raf);
-    teardownEvents?.();
+    experienceEvents.teardown();
     renderer.dispose();
     bg.renderer.dispose();
   };

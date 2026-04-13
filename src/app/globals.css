@@ -19,6 +19,9 @@
   --palette-web-line-hover: #ffffffe6;
   --palette-web-line-muted: #ffffff40;
   --palette-web-scene-neutral: #ffffff;
+  /* Ba line: cùng --intro-lines-duration / --intro-lines-ease → kết thúc đồng thời */
+  --intro-lines-duration: 2.5s;
+  --intro-lines-ease: cubic-bezier(0.33, 1, 0.32, 1);
 }
 
 @theme {
@@ -182,22 +185,59 @@ html.experience-loading #model-load-pct {
   width: 400px;
   max-width: 120vw;
   pointer-events: all;
-  transition: opacity 0.8s ease;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   padding-left: 5rem;
+  overflow: visible;
 }
 
+/* Transition only while hiding — avoids fading in over 0.8s after load (would hide line draw). */
 #intro-left.hidden {
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+
+/* --intro-rule-final-scale set in JS (15 / track width), giống theyearofgreta statement divider */
+#intro-rule-track {
+  --intro-rule-final-scale: 0.04;
+  position: relative;
+  align-self: stretch;
+  width: 100%;
+  height: 1px;
+  margin-bottom: 25px;
 }
 
 #intro-rule {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 15px;
   height: 1px;
-  margin-bottom: 25px;
+  box-sizing: border-box;
+  transform-origin: 0 50%;
+}
+
+/* Avoid one frame at rest (left:0 / full underline) before the motion starts */
+#intro-left:not(.lines-animated) #intro-rule {
+  opacity: 0;
+}
+
+#intro-left:not(.lines-animated) #explore-btn::after {
+  opacity: 0;
+}
+
+#intro-left.lines-animated:not(.intro-lines-reveal) #intro-rule {
+  opacity: 1;
+  width: 15px;
+  transform: none;
+}
+
+/* Full-width bar như .statement__divider — animation theo theyearofgreta.com */
+#intro-left.intro-lines-reveal #intro-rule {
+  width: 100%;
+  animation: intro-rule-draw var(--intro-lines-duration) both;
 }
 
 #intro-desc {
@@ -237,15 +277,22 @@ html.experience-loading #model-load-pct {
   right: 0;
   left: auto;
   opacity: 0.45;
+  transform: translateX(0) scaleX(1);
+  transform-origin: left bottom;
   transition:
     width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     background 0.3s ease;
+}
+
+#intro-left.intro-lines-reveal #explore-btn::after {
+  animation: explore-underline-draw var(--intro-lines-duration) both;
 }
 
 #explore-btn:hover::after {
   width: calc(100% + 5.5rem);
   background: var(--color-web-white);
   opacity: 0.85;
+  transform: translateX(0) scaleX(1);
 }
 
 #intro-right {
@@ -319,7 +366,7 @@ html.experience-loading #model-load-pct {
   position: absolute;
   top: 5rem;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(18px);
   display: flex;
   align-items: center;
   gap: 20px;
@@ -327,12 +374,15 @@ html.experience-loading #model-load-pct {
   font-weight: 600;
   letter-spacing: 0.15em;
   opacity: 0;
-  transition: opacity 1.2s ease-out;
+  transition:
+    opacity 1s ease-out,
+    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
 }
 
 #timeline.date-show {
   opacity: 0.8;
+  transform: translateX(-50%) translateY(0);
 }
 
 #tl-bar {
@@ -351,6 +401,9 @@ html.experience-loading #model-load-pct {
 }
 
 #social {
+  --sline-x-from: 0px;
+  --sline-x-to: 0px;
+  --sline-x-wf: 0.6;
   position: absolute;
   bottom: 5rem;
   right: 5rem;
@@ -359,6 +412,11 @@ html.experience-loading #model-load-pct {
   align-items: center;
   gap: 0;
   pointer-events: all;
+}
+
+/* Hide until JS snaps to the motion start (last icon) — no flash at translateX(0) */
+#social:not(.social-lines-animated) #sline {
+  opacity: 0;
 }
 
 #sline {
@@ -371,10 +429,15 @@ html.experience-loading #model-load-pct {
   transform: translateX(0);
   transform-origin: left center;
   transition:
-    transform 1s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.4s ease;
-  will-change: transform;
+    transform var(--intro-lines-duration) var(--intro-lines-ease),
+    opacity 0.45s ease;
   pointer-events: none;
+}
+
+#social.social-lines-animated.social-line-entry #sline {
+  transition: none;
+  animation: social-line-draw var(--intro-lines-duration) var(--intro-lines-ease)
+    forwards;
 }
 
 .soc {
@@ -413,21 +476,21 @@ html.experience-loading #model-load-pct {
 #year-lbl {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%) translateY(25%);
+  transform: translateX(-50%) translateY(calc(25% + 32px));
   bottom: calc(clamp(46px, 6.6vw, 84px) * 0.56 + 28px);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   opacity: 0;
   transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
+    opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 #month-lbl {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%) translateY(25%);
+  transform: translateX(-50%) translateY(calc(25% + 36px));
   bottom: 0;
   font-size: clamp(46px, 6.6vw, 84px);
   font-weight: 700;
@@ -437,10 +500,19 @@ html.experience-loading #model-load-pct {
   white-space: nowrap;
   user-select: none;
   will-change: opacity, transform;
+  transition:
+    opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 #month-lbl.date-show {
   opacity: 1;
+  transform: translateX(-50%) translateY(25%);
+}
+
+#month-lbl.enter-left,
+#month-lbl.enter-right {
+  transition: none;
 }
 
 #month-lbl-ghost {

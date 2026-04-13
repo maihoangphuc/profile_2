@@ -15,7 +15,9 @@ export default function ExperienceIntro() {
       </div>
 
       <div id="intro-left">
-        <div id="intro-rule" className="bg-web-white" />
+        <div id="intro-rule-track">
+          <div id="intro-rule" className="bg-web-white" />
+        </div>
         <div id="intro-desc" className="text-web-muted">
           {INTRO_DESCRIPTION}
         </div>
