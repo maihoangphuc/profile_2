@@ -366,7 +366,7 @@ html.experience-loading #model-load-pct {
   position: absolute;
   top: 5rem;
   left: 50%;
-  transform: translateX(-50%) translateY(18px);
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 20px;
@@ -374,15 +374,12 @@ html.experience-loading #model-load-pct {
   font-weight: 600;
   letter-spacing: 0.15em;
   opacity: 0;
-  transition:
-    opacity 1s ease-out,
-    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 1s ease-out;
   pointer-events: none;
 }
 
 #timeline.date-show {
   opacity: 0.8;
-  transform: translateX(-50%) translateY(0);
 }
 
 #tl-bar {
@@ -476,21 +473,21 @@ html.experience-loading #model-load-pct {
 #year-lbl {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%) translateY(calc(25% + 32px));
+  transform: translateX(-50%) translateY(calc(100% + 2.5rem));
   bottom: calc(clamp(46px, 6.6vw, 84px) * 0.56 + 28px);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   opacity: 0;
   transition:
-    opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 1.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 #month-lbl {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%) translateY(calc(25% + 36px));
+  transform: translateX(-50%) translateY(calc(100% + 2.5rem));
   bottom: 0;
   font-size: clamp(46px, 6.6vw, 84px);
   font-weight: 700;
@@ -501,8 +498,8 @@ html.experience-loading #model-load-pct {
   user-select: none;
   will-change: opacity, transform;
   transition:
-    opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 1.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 #month-lbl.date-show {
@@ -585,7 +582,7 @@ html.experience-loading #model-load-pct {
 }
 
 #model-load-pct.model-load-exit {
-  animation: model-load-slide-down 0.7s cubic-bezier(0.32, 0, 0.2, 1) forwards;
+  animation: model-load-slide-down 1.5s cubic-bezier(0.32, 0, 0.2, 1) forwards;
 }
 
 #year-lbl.date-show {
