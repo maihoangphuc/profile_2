@@ -409,6 +409,13 @@ html.experience-loading #model-load-pct {
   align-items: center;
   gap: 0;
   pointer-events: all;
+  opacity: 1;
+  transition: opacity 0.8s ease;
+}
+
+#social.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Hide until JS snaps to the motion start (last icon) — no flash at translateX(0) */
@@ -433,8 +440,8 @@ html.experience-loading #model-load-pct {
 
 #social.social-lines-animated.social-line-entry #sline {
   transition: none;
-  animation: social-line-draw var(--intro-lines-duration) var(--intro-lines-ease)
-    forwards;
+  animation: social-line-draw var(--intro-lines-duration)
+    var(--intro-lines-ease) forwards;
 }
 
 .soc {

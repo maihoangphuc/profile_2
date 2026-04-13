@@ -45,6 +45,22 @@ function smootherstep01(t: number) {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
+/** Cinematic startup: approach quickly, then settle softly. */
+function startupApproachSettle01(t: number) {
+  const x = Math.min(1, Math.max(0, t));
+  const settleStart = 0.72;
+  if (x <= settleStart) {
+    return { approach: smootherstep01(x / settleStart), settle: 0 };
+  }
+  return {
+    approach: 1,
+    settle: Math.pow(
+      smootherstep01((x - settleStart) / (1 - settleStart)),
+      0.85,
+    ),
+  };
+}
+
 /**
  * Góc tương đương 0 (k·2π) sao cho đích luôn lớn hơn start ít nhất một vòng
  * (xoay trái → phải).
@@ -178,8 +194,6 @@ export function startExperience() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
-
-
 
   scene.add(
     new THREE.AmbientLight(rootCssVarToHexInt("--color-web-white"), 0.3),
@@ -539,6 +553,16 @@ export function startExperience() {
   let isDragging = false;
   let lastX = 0;
   let introActive = true;
+  /** First reveal after loading: spin figure one turn, then show intro lines. */
+  let startupIntroSpinActive = false;
+  let startupIntroSpinStartMs = 0;
+  const STARTUP_INTRO_SPIN_MS = 6800;
+  const STARTUP_INTRO_MODEL_SCALE_FROM = 1.75;
+  const STARTUP_INTRO_MODEL_SCALE_OVERSHOOT = 2.71;
+  const STARTUP_INTRO_MODEL_Y_FROM = -1.24;
+  const STARTUP_INTRO_MODEL_Y_OVERSHOOT = -0.76;
+  const STARTUP_INTRO_MODEL_Z_FROM = -1.35;
+  const STARTUP_INTRO_MODEL_Z_OVERSHOOT = 0.08;
   /** True while the post-explore entrance animation is running. */
   let experienceEntryActive = false;
   let experienceEntryStartMs = 0;
@@ -570,8 +594,6 @@ export function startExperience() {
   let experienceExitStartMs = 0;
   /** Kể cả đã scroll hay chưa — panel âm + model về intro chạy song song, chậm mượt. */
   const EXPERIENCE_EXIT_MS = 2650;
-  /** Panel opacity: fade sau khi scroll đã bắt đầu (đọc được chuyển động). */
-  const EXPERIENCE_EXIT_PANEL_FADE_DELAY = 0.18;
   /** Always scroll panels at least this many units into negative. */
   const EXPERIENCE_EXIT_MIN_SCROLL_TRAVEL = 5;
   /** Max negative scroll (index space) — đảm bảo panel ra khỏi màn hình. */
@@ -687,6 +709,29 @@ export function startExperience() {
       }
     }
 
+    function replaySocialLineEffect() {
+      if (links.length === 0) return;
+      const wf = 0.6;
+      dom.social.classList.add("social-lines-animated");
+      dom.social.classList.remove("social-line-entry");
+      void dom.sline.offsetHeight;
+      if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
+      dom.sline.addEventListener(
+        "animationend",
+        (ev) => {
+          if (
+            ev.target !== dom.sline ||
+            ev.animationName !== "social-line-draw"
+          )
+            return;
+          if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
+          dom.social.classList.remove("social-line-entry");
+        },
+        { once: true },
+      );
+      dom.social.classList.add("social-line-entry");
+    }
+
     links.forEach((el) => {
       el.addEventListener("mouseenter", () => positionSocialLine(el, 1));
       el.addEventListener("focus", () => {
@@ -722,7 +767,12 @@ export function startExperience() {
     const onMouseMove = (e: MouseEvent) => {
       mouse.x = (e.clientX / innerWidth) * 2 - 1;
       mouse.y = -(e.clientY / innerHeight) * 2 + 1;
-      if (isDragging && !introActive && !experienceExitActive && !experienceEntryActive) {
+      if (
+        isDragging &&
+        !introActive &&
+        !experienceExitActive &&
+        !experienceEntryActive
+      ) {
         const dx = lastX - e.clientX;
         lastX = e.clientX;
         scrollVel += dx * 0.002;
@@ -748,6 +798,7 @@ export function startExperience() {
       if (!introActive) return;
       if (exploreCommitPending) return;
       exploreCommitPending = true;
+      dom.social.classList.add("hidden");
       if (introLineRevealTimer !== undefined) {
         clearTimeout(introLineRevealTimer);
         introLineRevealTimer = undefined;
@@ -791,6 +842,8 @@ export function startExperience() {
           timelineRevealTimer = undefined;
           timelineDatesVisible = true;
           dom.timeline.classList.add("date-show");
+          dom.social.classList.remove("hidden");
+          replaySocialLineEffect();
           document.getElementById("year-lbl")?.classList.add("date-show");
           dom.month.classList.add("date-show");
         }, EXPERIENCE_ENTRY_MS);
@@ -819,6 +872,7 @@ export function startExperience() {
         introLineRevealTimer = undefined;
       }
       dom.timeline.classList.remove("date-show");
+      dom.social.classList.add("hidden");
       document.getElementById("year-lbl")?.classList.remove("date-show");
       dom.month.classList.remove("date-show");
       lastMonthIndex = null;
@@ -885,6 +939,7 @@ export function startExperience() {
         dom.soundBtn.removeEventListener("click", togglePaused);
       },
       runIntroPageLineEffects,
+      replaySocialLineEffect,
     };
   }
 
@@ -926,7 +981,10 @@ export function startExperience() {
       modelLoadDisplayPct += (targetDisplay - modelLoadDisplayPct) * followK;
 
       // Càng về sau số càng chậm nên cần đảm bảo display không bao giờ giảm.
-      modelLoadDisplayPct = Math.min(99, Math.max(modelLoadDisplayPct, lastRenderedLoadPct));
+      modelLoadDisplayPct = Math.min(
+        99,
+        Math.max(modelLoadDisplayPct, lastRenderedLoadPct),
+      );
 
       const shown = Math.floor(modelLoadDisplayPct);
       if (shown !== lastRenderedLoadPct) {
@@ -942,6 +1000,20 @@ export function startExperience() {
       const elapsed = performance.now() - experienceEntryStartMs;
       experienceEntryProgress = Math.min(1, elapsed / EXPERIENCE_ENTRY_MS);
       if (experienceEntryProgress >= 1) experienceEntryActive = false;
+    }
+
+    let startupIntroSpinProgress = 1;
+    if (startupIntroSpinActive) {
+      const elapsed = performance.now() - startupIntroSpinStartMs;
+      startupIntroSpinProgress = Math.min(1, elapsed / STARTUP_INTRO_SPIN_MS);
+      if (startupIntroSpinProgress >= 1) {
+        startupIntroSpinActive = false;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            completeExploreReturnToIntroUi();
+          });
+        });
+      }
     }
 
     let exitProgress = 0;
@@ -979,8 +1051,27 @@ export function startExperience() {
       scrollVelVis = lerp(scrollVelVis, scrollVel, 0.1);
     }
 
-    cam.position.set(0, 0.5, 11);
-    cam.lookAt(0, 0.3, 0);
+    const startupSpinBlend =
+      introActive && startupIntroSpinActive
+        ? startupApproachSettle01(startupIntroSpinProgress)
+        : { approach: 1, settle: 1 };
+    let camX = 0;
+    let camY = 0.5;
+    let camLookAtY = 0.3;
+    let camZ = 11;
+    if (introActive && startupIntroSpinActive) {
+      // Single continuous arc (C1-smooth) to avoid jerk at segment boundaries.
+      const x = smootherstep01(startupIntroSpinProgress);
+      const theta = lerp(-2.45, -0.12, x);
+      const radius = lerp(12.9, 11.0, x);
+      camX = Math.sin(theta) * radius;
+      camZ = Math.cos(theta) * radius;
+      camY = lerp(3.6, 0.5, x);
+      // Keep gaze around torso/rock center to avoid "punching into the head".
+      camLookAtY = lerp(0.0, 0.3, x);
+    }
+    cam.position.set(camX, camY, camZ);
+    cam.lookAt(0, camLookAtY, 0);
 
     const t = Date.now() * 0.001;
     const entryScrollBlend =
@@ -1005,9 +1096,12 @@ export function startExperience() {
           yaw = exitBgYaw0 - modelTravel * m;
         } else {
           // TH1/TH3: xoay chiều âm, kết thúc tại k·2π (≡ yaw=0 thị giác) — không giật khi intro
-          const targetYaw = (Math.floor(exitBgYaw0 / TAU - 1e-9)) * TAU;
+          const targetYaw = Math.floor(exitBgYaw0 / TAU - 1e-9) * TAU;
           yaw = exitBgYaw0 + (targetYaw - exitBgYaw0) * m;
         }
+      } else if (introActive && startupIntroSpinActive) {
+        const blend = smootherstep01(startupIntroSpinProgress);
+        yaw = lerp(-TAU * 1.35, 0, blend);
       } else if (!introActive && experienceEntryProgress < 1) {
         // Entry: bg xoay theo chiều dương (ngược model để đúng hướng)
         const endSn = entryScrollTo / (N - 1);
@@ -1045,7 +1139,47 @@ export function startExperience() {
         const targetPosY = introActive ? -0.8 : -0.8 - sn * 1.2;
         const targetScale = introActive ? 2.6 : 2.6 + sn * 0.6;
 
-        if (!introActive && experienceEntryProgress < 1) {
+        if (introActive && startupIntroSpinActive) {
+          // Multi-shot startup: camera reveals details, figure rotates gently.
+          const x = smootherstep01(startupIntroSpinProgress);
+          const mainTurn = lerp(Math.PI * 1.9, 0, x);
+          const tailSettle = Math.sin(x * Math.PI) * (1 - x) * 0.06;
+          const spin = mainTurn + tailSettle;
+          const startupScale = lerp(
+            lerp(
+              STARTUP_INTRO_MODEL_SCALE_FROM,
+              STARTUP_INTRO_MODEL_SCALE_OVERSHOOT,
+              startupSpinBlend.approach,
+            ),
+            2.6,
+            startupSpinBlend.settle,
+          );
+          const startupY = lerp(
+            lerp(
+              STARTUP_INTRO_MODEL_Y_FROM,
+              STARTUP_INTRO_MODEL_Y_OVERSHOOT,
+              startupSpinBlend.approach,
+            ),
+            -0.8,
+            startupSpinBlend.settle,
+          );
+          const startupZ = lerp(
+            lerp(
+              STARTUP_INTRO_MODEL_Z_FROM,
+              STARTUP_INTRO_MODEL_Z_OVERSHOOT,
+              startupSpinBlend.approach,
+            ),
+            0,
+            startupSpinBlend.settle,
+          );
+          figRotY = 0;
+          figPosY = startupY;
+          figScale = startupScale;
+          figureGroup.rotation.x = 0;
+          figureGroup.rotation.y = spin;
+          figureGroup.position.set(0, startupY, startupZ);
+          figureGroup.scale.setScalar(startupScale);
+        } else if (!introActive && experienceEntryProgress < 1) {
           const endSn = entryScrollTo / (N - 1);
           const baseRotAtEnd = endSn * -Math.PI * 2;
           const spin = (1 - entryScrollBlend) * Math.PI * 2;
@@ -1256,6 +1390,7 @@ export function startExperience() {
     dom.introLeft.classList.remove("hidden");
     dom.introRight.classList.remove("hidden");
     dom.bgName.classList.remove("hidden");
+    dom.social.classList.remove("hidden");
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         experienceEvents.runIntroPageLineEffects();
@@ -1274,6 +1409,10 @@ export function startExperience() {
 
   void loadModels()
     .then(() => {
+      dom.introLeft.classList.add("hidden");
+      dom.introRight.classList.add("hidden");
+      dom.bgName.classList.add("hidden");
+      dom.social.classList.add("hidden");
       document.documentElement.classList.remove("experience-loading");
       dom.bgName.classList.add("model-ready");
       dom.modelLoadPct.setAttribute("aria-busy", "false");
@@ -1289,7 +1428,12 @@ export function startExperience() {
         once: true,
       });
       window.setTimeout(finishLoadHud, 1200);
-      scheduleIntroLinesWhenUiVisible();
+      if (figureGroup) {
+        startupIntroSpinStartMs = performance.now();
+        startupIntroSpinActive = true;
+      } else {
+        scheduleIntroLinesWhenUiVisible();
+      }
     })
     .catch((err: unknown) => {
       console.error("Failed to load 3D models", err);
