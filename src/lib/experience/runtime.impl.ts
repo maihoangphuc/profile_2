@@ -46,24 +46,15 @@ function smootherstep01(t: number) {
 }
 
 /**
- * Góc tương đương 0 (k·2π) sao cho |đích − start| ≥ một vòng — luôn thấy model xoay
- * khi thoát Explore; tránh đường thẳng quá ngắn trên trục Euler.
+ * Góc tương đương 0 (k·2π) sao cho đích luôn lớn hơn start ít nhất một vòng
+ * (xoay trái → phải).
  */
 function exitRotationTargetAtLeastOneTurn(start: number): number {
   const TAU = Math.PI * 2;
-  if (!Number.isFinite(start)) return 0;
-  const mNear = Math.round(start / TAU);
-  let best: number | null = null;
-  let bestD = Infinity;
-  for (let k = mNear - 60; k <= mNear + 60; k++) {
-    const e = k * TAU;
-    const d = Math.abs(e - start);
-    if (d + 1e-9 >= TAU && d < bestD) {
-      bestD = d;
-      best = e;
-    }
-  }
-  return best ?? 0;
+  if (!Number.isFinite(start)) return TAU;
+  // Lấy k nhỏ nhất sao cho k*TAU > start + TAU (tức là đích > start + một vòng)
+  const k = Math.ceil((start + TAU) / TAU + 1e-9);
+  return k * TAU;
 }
 
 function getDom(): Dom {
@@ -595,21 +586,28 @@ export function startExperience() {
   let experienceExitActive = false;
   let experienceExitStartMs = 0;
   /** Kể cả đã scroll hay chưa — panel âm + model về intro chạy song song, chậm mượt. */
-  const EXPERIENCE_EXIT_MS = 4200;
+  const EXPERIENCE_EXIT_MS = 2650;
   /** Panel opacity: fade sau khi scroll đã bắt đầu (đọc được chuyển động). */
   const EXPERIENCE_EXIT_PANEL_FADE_DELAY = 0.18;
-  /** Always undershoot by at least this many scroll index units, then clamp so path goes slightly negative. */
-  const EXPERIENCE_EXIT_MIN_SCROLL_TRAVEL = 3.5;
-  /** Max negative scroll (index space) for smooth rewind when đã scroll xa. */
-  const EXPERIENCE_EXIT_SCROLL_DEEP_CAP = -0.5;
+  /** Always scroll panels at least this many units into negative. */
+  const EXPERIENCE_EXIT_MIN_SCROLL_TRAVEL = 5;
+  /** Max negative scroll (index space) — đảm bảo panel ra khỏi màn hình. */
+  const EXPERIENCE_EXIT_SCROLL_DEEP_CAP = -12;
   /** Scroll: tới undershoot âm rồi về 0 (smootherstep — mượt đầu/cuối từng pha). */
-  const EXPERIENCE_EXIT_UNDERSHOOT_SPLIT = 0.52;
+  const EXPERIENCE_EXIT_UNDERSHOOT_SPLIT = 0.99;
   let exitScroll0 = 0;
   let exitFigRot0 = 0;
   /** Đích nội suy (≡ 0 mod 2π), quãng đường từ exitFigRot0 luôn ≥ một vòng. */
   let exitFigRot1 = 0;
+  /** TH2: entry đang giữa chừng khi brand được nhấn — xoay nhẹ về intro không buộc 1 vòng. */
+  let exitWasEntryMidSpin = false;
+  /** Visual scroll mới nhất (kể cả entry lerp) — để capture đúng khi exit trigger. */
+  let scrollForLayoutLast = 0;
   let exitFigPosY0 = -0.8;
   let exitFigScale0 = 2.6;
+  /** BG yaw captured tại frame cuối trước exit — tránh giật do công thức entry ≠ exit. */
+  let exitBgYaw0 = 0;
+  let bgYawLast = 0;
 
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2(-10, -10);
@@ -725,7 +723,7 @@ export function startExperience() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (!scrolled) scrolled = true;
-      if (introActive || experienceExitActive) return;
+      if (introActive || experienceExitActive || experienceEntryActive) return;
       scrollVel += e.deltaY * 0.00045;
     };
     window.addEventListener("wheel", onWheel, { passive: false });
@@ -741,7 +739,7 @@ export function startExperience() {
     const onMouseMove = (e: MouseEvent) => {
       mouse.x = (e.clientX / innerWidth) * 2 - 1;
       mouse.y = -(e.clientY / innerHeight) * 2 + 1;
-      if (isDragging && !introActive && !experienceExitActive) {
+      if (isDragging && !introActive && !experienceExitActive && !experienceEntryActive) {
         const dx = lastX - e.clientX;
         lastX = e.clientX;
         scrollVel += dx * 0.002;
@@ -848,12 +846,24 @@ export function startExperience() {
       dom.month.classList.remove("enter-left", "enter-right");
       dom.monthGhost.classList.remove("leave-left", "leave-right");
 
-      exitScroll0 = scrollCurrent;
+      exitScroll0 = experienceEntryActive ? scrollForLayoutLast : scrollCurrent;
       /** Góc Euler thật trên mesh (kể cả giữa chừng entry spin) — không dùng figRotY có thể lệch. */
       exitFigRot0 = figureGroup ? figureGroup.rotation.y : figRotY;
-      exitFigRot1 = exitRotationTargetAtLeastOneTurn(exitFigRot0);
+      exitWasEntryMidSpin = experienceEntryActive;
+      if (exitWasEntryMidSpin) {
+        // TH2: entry chưa xong — xoay nhẹ chiều dương (trái→phải) về k·2π gần nhất phía trước
+        const TAU = Math.PI * 2;
+        exitFigRot1 = Math.ceil(exitFigRot0 / TAU + 1e-9) * TAU;
+      } else if (Math.abs(scrollCurrent) < 0.1) {
+        // TH1: entry xong, chưa scroll — xoay đúng 1 vòng chiều dương
+        exitFigRot1 = exitFigRot0 + Math.PI * 2;
+      } else {
+        // TH3: entry xong, đã scroll — xoay ≥ 1 vòng chiều dương, kết thúc đúng k·2π (≡ 0)
+        exitFigRot1 = exitRotationTargetAtLeastOneTurn(exitFigRot0);
+      }
       exitFigPosY0 = figPosY;
       exitFigScale0 = figScale;
+      exitBgYaw0 = bgYawLast;
       experienceExitStartMs = performance.now();
       experienceExitActive = true;
       experienceEntryActive = false;
@@ -999,16 +1009,38 @@ export function startExperience() {
     if (!introActive && experienceEntryProgress < 1 && !experienceExitActive) {
       scrollForLayout = lerp(entryScrollFrom, entryScrollTo, entryScrollBlend);
     }
+    scrollForLayoutLast = scrollForLayout;
     const sn = scrollForLayout / (N - 1);
 
     if (bg.camera) {
       const TAU = Math.PI * 2;
-      const orbitBlend = introActive ? 0 : entryScrollBlend;
-      const baseYaw = introActive ? 0 : sn * TAU * 1.25 * orbitBlend;
-      const yaw = baseYaw + scrollVelVis * 0.15;
+      let yaw: number;
+      if (experienceExitActive) {
+        const m = smootherstep01(exitProgress);
+        if (exitWasEntryMidSpin) {
+          // TH2: bg giảm tương ứng model tăng — cùng chiều thị giác
+          const modelTravel = exitFigRot1 - exitFigRot0;
+          yaw = exitBgYaw0 - modelTravel * m;
+        } else {
+          // TH1/TH3: xoay chiều âm, kết thúc tại k·2π (≡ yaw=0 thị giác) — không giật khi intro
+          const targetYaw = (Math.floor(exitBgYaw0 / TAU - 1e-9)) * TAU;
+          yaw = exitBgYaw0 + (targetYaw - exitBgYaw0) * m;
+        }
+      } else if (!introActive && experienceEntryProgress < 1) {
+        // Entry: bg xoay theo chiều dương (ngược model để đúng hướng)
+        const endSn = entryScrollTo / (N - 1);
+        const finalYaw = endSn * TAU * 1.25;
+        const spin = (1 - entryScrollBlend) * TAU;
+        yaw = finalYaw - spin;
+      } else {
+        const orbitBlend = introActive ? 0 : 1;
+        const baseYaw = introActive ? 0 : sn * TAU * 1.25 * orbitBlend;
+        yaw = baseYaw + scrollVelVis * 0.15;
+      }
       const radius = 5;
       bg.camera.position.set(Math.sin(yaw) * radius, 0, Math.cos(yaw) * radius);
       bg.camera.lookAt(0, 0.2, 0);
+      bgYawLast = yaw;
     }
     bg.material.uniforms.uOffsetX.value = 0;
 
@@ -1076,16 +1108,7 @@ export function startExperience() {
       Math.min(N - 1, Math.round(scrollForLayout)),
     );
 
-    const panelExitMul = experienceExitActive
-      ? (() => {
-          const delayed = Math.max(
-            0,
-            (exitProgress - EXPERIENCE_EXIT_PANEL_FADE_DELAY) /
-              (1 - EXPERIENCE_EXIT_PANEL_FADE_DELAY),
-          );
-          return 1 - smootherstep01(delayed);
-        })()
-      : 1;
+    const panelExitMul = 1;
 
     /** Sau điểm undershoot: không render panel (kể cả khi scroll từ xa về 0). */
     const exitHidePanelsAfterUndershoot =
