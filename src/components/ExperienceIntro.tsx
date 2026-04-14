@@ -18,11 +18,39 @@ export default function ExperienceIntro() {
         <div id="intro-rule-track">
           <div id="intro-rule" className="bg-web-white" />
         </div>
-        <div id="intro-desc" className="text-web-muted">
-          {INTRO_DESCRIPTION}
+        <div
+          id="intro-desc"
+          className="text-web-muted"
+          aria-label={INTRO_DESCRIPTION}
+        >
+          {INTRO_DESCRIPTION.split(" ").map((word, i) => (
+            <span
+              key={i}
+              className="intro-word"
+              style={{
+                display: "inline-block",
+                marginRight: "0.25em",
+                opacity: 0,
+                transform: "translateY(8px)",
+              }}
+            >
+              {word}
+            </span>
+          ))}
         </div>
         <button id="explore-btn" className="text-web-white" type="button">
-          Explore
+          <span className="explore-text">
+            {"Explore".split("").map((c, i) => (
+              <span
+                key={i}
+                className="explore-char"
+                style={{ display: "inline-block" }}
+              >
+                {c === " " ? "\u00A0" : c}
+              </span>
+            ))}
+          </span>
+          <span id="explore-underline" />
         </button>
       </div>
 
@@ -31,7 +59,8 @@ export default function ExperienceIntro() {
           {INTRO_RIGHT_TEXT}
         </div>
         <button id="read-more" className="text-web-label" type="button">
-          Read More
+          <span className="read-more-text">Read More</span>
+          <span id="read-more-underline" />
         </button>
       </div>
     </>

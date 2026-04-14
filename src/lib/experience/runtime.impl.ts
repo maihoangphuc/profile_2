@@ -45,22 +45,6 @@ function smootherstep01(t: number) {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-/** Cinematic startup: approach quickly, then settle softly. */
-function startupApproachSettle01(t: number) {
-  const x = Math.min(1, Math.max(0, t));
-  const settleStart = 0.72;
-  if (x <= settleStart) {
-    return { approach: smootherstep01(x / settleStart), settle: 0 };
-  }
-  return {
-    approach: 1,
-    settle: Math.pow(
-      smootherstep01((x - settleStart) / (1 - settleStart)),
-      0.85,
-    ),
-  };
-}
-
 /**
  * Góc tương đương 0 (k·2π) sao cho đích luôn lớn hơn start ít nhất một vòng
  * (xoay trái → phải).
@@ -558,11 +542,8 @@ export function startExperience() {
   let startupIntroSpinStartMs = 0;
   const STARTUP_INTRO_SPIN_MS = 6800;
   const STARTUP_INTRO_MODEL_SCALE_FROM = 1.75;
-  const STARTUP_INTRO_MODEL_SCALE_OVERSHOOT = 2.71;
   const STARTUP_INTRO_MODEL_Y_FROM = -1.24;
-  const STARTUP_INTRO_MODEL_Y_OVERSHOOT = -0.76;
   const STARTUP_INTRO_MODEL_Z_FROM = -1.35;
-  const STARTUP_INTRO_MODEL_Z_OVERSHOOT = 0.08;
   /** True while the post-explore entrance animation is running. */
   let experienceEntryActive = false;
   let experienceEntryStartMs = 0;
@@ -619,7 +600,9 @@ export function startExperience() {
 
   function positionSocialLine(target: HTMLElement, widthFactor = 1) {
     const x = target.offsetLeft;
-    dom.sline.style.transform = `translateX(${x}px) scaleX(${widthFactor})`;
+    dom.sline.style.left = `${x}px`;
+    dom.sline.style.width = "52px";
+    dom.sline.style.transform = `scaleX(${widthFactor})`;
     dom.sline.style.opacity = "0.85";
   }
 
@@ -645,28 +628,25 @@ export function startExperience() {
       return ms + 40;
     }
 
-    /** Intro rule + Explore underline + social line: cùng `--intro-lines-duration`, kết thúc đồng thời. */
+    /** Intro rule + Explore underline + social line via GSAP */
     function runIntroPageLineEffects() {
       if (introLineRevealTimer !== undefined) {
         clearTimeout(introLineRevealTimer);
         introLineRevealTimer = undefined;
       }
-      dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
+      dom.introLeft.classList.remove("lines-animated");
       void dom.introLeft.offsetHeight;
-      dom.social.classList.remove("social-line-entry");
-      void dom.sline.offsetHeight;
 
       const wf = 0.6;
+      let xFirst = 0;
+      let xLastEdge = 0;
 
       if (links.length >= 2) {
         const first = links[0]!;
         const last = links[links.length - 1]!;
         activeSocialLink = first;
-        const xFirst = first.offsetLeft;
-        const xLast = last.offsetLeft;
-        dom.social.style.setProperty("--sline-x-from", `${xLast}px`);
-        dom.social.style.setProperty("--sline-x-to", `${xFirst}px`);
-        dom.social.style.setProperty("--sline-x-wf", String(wf));
+        xFirst = first.offsetLeft;
+        xLastEdge = last.offsetLeft + last.offsetWidth;
       } else if (links.length === 1) {
         activeSocialLink = links[0]!;
         dom.sline.style.transition = "none";
@@ -675,61 +655,241 @@ export function startExperience() {
         dom.sline.style.transition = "";
       }
 
-      const tw = dom.introRuleTrack.offsetWidth;
-      dom.introRuleTrack.style.setProperty(
-        "--intro-rule-final-scale",
-        tw > 0 ? String(15 / tw) : "0.04",
-      );
-
-      dom.introLeft.classList.add("lines-animated", "intro-lines-reveal");
       const revealMs = introLinesDurationMs();
       introLinesAnimEndMs = performance.now() + revealMs;
-      introLineRevealTimer = window.setTimeout(() => {
-        introLineRevealTimer = undefined;
-        dom.introLeft.classList.remove("intro-lines-reveal");
-      }, revealMs);
 
-      if (links.length >= 2) {
-        dom.sline.addEventListener(
-          "animationend",
-          (ev) => {
-            if (
-              ev.target !== dom.sline ||
-              ev.animationName !== "social-line-draw"
-            )
-              return;
-            if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
-            dom.social.classList.remove("social-line-entry");
-          },
-          { once: true },
-        );
-        dom.social.classList.add("social-lines-animated", "social-line-entry");
-      } else if (links.length === 1) {
-        dom.social.classList.add("social-lines-animated");
-      }
+      import("gsap").then(({ gsap }) => {
+        const duration = revealMs / 1000;
+        // 1. Math: Calculate total Intro Left sequence length for precise spin synchronization
+        const wordsCount = dom.introLeft.querySelectorAll(".intro-word").length;
+        const wordDur = 0.3;
+        const wordStagger = 0.008;
+        const wordsTotalSecs = wordDur + Math.max(0, wordsCount - 1) * wordStagger;
+
+        const exploreChars = dom.exploreBtn.querySelectorAll(".explore-char");
+        const charDur = duration * 0.25;
+        const charStagger = duration * 0.035;
+        const exploreTextTotalSecs = charDur + Math.max(0, exploreChars.length - 1) * charStagger;
+
+        // Sequence: Rule Head (0.65) -> Words (total) -> Explore Line Tail (0.85)
+        const sequenceLength = (duration * 0.65) + wordsTotalSecs + (duration * 0.85);
+
+        let globalDelay = 0;
+        if (startupIntroSpinActive) {
+            // Delay Intro Left so it finishes EXACTLY with the 6800ms spin
+            globalDelay = Math.max(0, (STARTUP_INTRO_SPIN_MS / 1000) - sequenceLength);
+        }
+
+        // 2. Timeline Trigger Points
+        const t_ruleStart = globalDelay;
+        const t_words = t_ruleStart + (duration * 0.65);
+        const t_wordsEnd = t_words + wordsTotalSecs;
+        const t_exploreLine = t_wordsEnd;
+        const t_exploreLineEnd = t_exploreLine + (duration * 0.85);
+        const t_exploreText = t_exploreLineEnd - exploreTextTotalSecs;
+
+        // --- PREP PHASE: Set all zero-states BEFORE lifting CSS guards ---
+        
+        const introRule = document.getElementById("intro-rule");
+        let tw = 0;
+        if (introRule) {
+            tw = dom.introRuleTrack.offsetWidth;
+            gsap.killTweensOf(introRule);
+            introRule.style.transition = "none";
+            gsap.set(introRule, { left: 0, scaleX: 1, x: 0, width: tw, clipPath: "inset(0% 0% 0% 100%)" });
+        }
+
+        const exploreLine = document.getElementById("explore-underline");
+        let exploreTotalW = 0;
+        let exploreTargetW = 0;
+        if (exploreLine) {
+            exploreTargetW = exploreLine.offsetWidth;
+            exploreTotalW = Math.max(dom.introLeft.offsetWidth / 2, exploreTargetW);
+            gsap.killTweensOf(exploreLine);
+            exploreLine.style.transition = "none";
+            gsap.set(exploreLine, { left: "auto", right: 0, scaleX: 1, x: 0, width: exploreTotalW, clipPath: "inset(0% 100% 0% 0%)" });
+        }
+
+        let totalSpan = 0;
+        let socTargetW = 0;
+        if (links.length >= 2) {
+          totalSpan = xLastEdge - xFirst;
+          socTargetW = 52 * wf;
+          gsap.killTweensOf(dom.sline);
+          dom.sline.style.transition = "none"; 
+          gsap.set(dom.sline, { left: xFirst, width: totalSpan, scaleX: 1, x: 0, opacity: 1, clipPath: "inset(0% 0% 0% 100%)" });
+        }
+
+        const rightText = document.getElementById("intro-right-text");
+        if (rightText) gsap.set(rightText, { opacity: 0 });
+
+        if (dom.bgName) gsap.set(dom.bgName, { opacity: 0 });
+        
+        const readMore = document.getElementById("read-more");
+        if (readMore) gsap.set(readMore, { opacity: 0 });
+        
+        if (exploreChars.length > 0) gsap.set(exploreChars, { opacity: 0 });
+
+        // --- REVEAL PHASE: Lift CSS guards now that inline styles are set ---
+        
+        dom.introLeft.classList.add("lines-animated");
+        dom.introRight.classList.add("lines-animated");
+        if (links.length >= 2) dom.social.classList.add("social-lines-animated");
+
+        // --- ANIMATION PHASE ---
+
+        // 1. Intro rule (Worm Chase)
+        if (introRule) {
+            const ruleProxy = { head: 100, tail: 0 };
+            const finalTail = Math.max(0, 100 - (15 / tw) * 100);
+            const tl_rule = gsap.timeline({
+                delay: t_ruleStart,
+                onComplete: () => {
+                    gsap.set(introRule, { clearProps: "all" });
+                    introRule.style.transition = "none";
+                    void introRule.offsetHeight;
+                    introRule.style.transition = "";
+                }
+            });
+            tl_rule.to(ruleProxy, { head: 0, duration: duration * 0.65, ease: "power3.inOut", onUpdate: () => introRule.style.clipPath = `inset(0% ${ruleProxy.tail}% 0% ${ruleProxy.head}%)` }, 0)
+                   .to(ruleProxy, { tail: finalTail, duration: duration * 0.55, ease: "power3.out", onUpdate: () => introRule.style.clipPath = `inset(0% ${ruleProxy.tail}% 0% ${ruleProxy.head}%)` }, duration * 0.3);
+        }
+
+        // 2. Explore underline (Worm Chase Left-to-Right)
+        if (exploreLine) {
+            const expProxy = { head: 100, tail: 0 };
+            const finalTail = Math.max(0, 100 - (exploreTargetW / exploreTotalW) * 100);
+            const tl_exp = gsap.timeline({ 
+                delay: t_exploreLine,
+                onComplete: () => {
+                    gsap.set(exploreLine, { clearProps: "all" });
+                    exploreLine.style.transition = "none";
+                    void exploreLine.offsetHeight;
+                    exploreLine.style.transition = "";
+                }
+            });
+            tl_exp.to(expProxy, { head: 0, duration: duration * 0.65, ease: "power3.inOut", onUpdate: () => exploreLine.style.clipPath = `inset(0% ${expProxy.head}% 0% ${expProxy.tail}%)` }, 0)
+                  .to(expProxy, { tail: finalTail, duration: duration * 0.55, ease: "power3.out", onUpdate: () => exploreLine.style.clipPath = `inset(0% ${expProxy.head}% 0% ${expProxy.tail}%)` }, duration * 0.3);
+        }
+
+        // 3. Social line (Worm Chase + Flash Fix)
+        if (links.length >= 2) {
+          const socProxy = { head: 100, tail: 0 };
+          const finalTail = Math.max(0, 100 - (socTargetW / totalSpan) * 100);
+          const tl_soc = gsap.timeline({
+            onComplete: () => {
+              gsap.set(dom.sline, { clearProps: "all" });
+              dom.sline.style.transition = "none"; 
+              if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
+              void dom.sline.offsetHeight;
+              dom.sline.style.transition = ""; 
+            }
+          });
+          
+          tl_soc.to(socProxy, { head: 0, duration: duration * 0.65, ease: "power3.inOut", onUpdate: () => dom.sline.style.clipPath = `inset(0% ${socProxy.tail}% 0% ${socProxy.head}%)` }, 0)
+                .to(socProxy, { tail: finalTail, duration: duration * 0.55, ease: "power3.out", onUpdate: () => dom.sline.style.clipPath = `inset(0% ${socProxy.tail}% 0% ${socProxy.head}%)` }, duration * 0.3);
+
+          const socIcons = dom.social.querySelectorAll(".soc");
+          if (socIcons.length > 0) {
+            gsap.killTweensOf(socIcons);
+            gsap.fromTo(socIcons, { opacity: 0 }, {
+              opacity: 0.45,
+              duration: 0.5,
+              stagger: -0.15, // Reverse stagger to bloom from Right-to-Left
+              ease: "expo.out",
+              delay: duration * 0.065, // Starts exactly at 10% of the line's head movement duration
+              clearProps: "opacity"
+            });
+          }
+        } else if (links.length === 1) {
+          dom.social.classList.add("social-lines-animated");
+        }
+
+        // 4. Text reveals
+        if (dom.bgName) {
+            const bgDelay = startupIntroSpinActive ? (STARTUP_INTRO_SPIN_MS / 1000) : 0;
+            gsap.to(dom.bgName, { opacity: 1, duration: 1.8, ease: "power2.out", clearProps: "opacity", delay: bgDelay });
+        }
+        
+        const words = dom.introLeft.querySelectorAll(".intro-word");
+        if (words.length > 0) {
+            gsap.killTweensOf(words);
+            gsap.fromTo(words, { opacity: 0, y: 10 }, {
+                opacity: 1, y: 0, duration: wordDur, stagger: wordStagger, ease: "expo.out", delay: t_words
+            });
+        }
+        if (exploreChars.length > 0) {
+            gsap.killTweensOf(exploreChars);
+            gsap.fromTo(exploreChars, { opacity: 0 }, {
+                opacity: 1, duration: charDur, ease: "power2.inOut", stagger: charStagger, clearProps: "opacity", delay: t_exploreText
+            });
+        }
+
+        if (rightText) {
+            gsap.killTweensOf(rightText);
+            gsap.to(rightText, { opacity: 0.9, duration: 0.7, delay: t_exploreText, ease: "expo.out", clearProps: "opacity" });
+        }
+        if (readMore) {
+            gsap.killTweensOf(readMore);
+            gsap.to(readMore, { opacity: 1, duration: 0.7, delay: t_exploreText + 0.1, ease: "expo.out", clearProps: "opacity" });
+        }
+      });
     }
 
     function replaySocialLineEffect() {
       if (links.length === 0) return;
       const wf = 0.6;
-      dom.social.classList.add("social-lines-animated");
-      dom.social.classList.remove("social-line-entry");
-      void dom.sline.offsetHeight;
-      if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
-      dom.sline.addEventListener(
-        "animationend",
-        (ev) => {
-          if (
-            ev.target !== dom.sline ||
-            ev.animationName !== "social-line-draw"
-          )
-            return;
-          if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
-          dom.social.classList.remove("social-line-entry");
-        },
-        { once: true },
-      );
-      dom.social.classList.add("social-line-entry");
+      
+      if (links.length >= 2) {
+        const first = links[0]!;
+        const last = links[links.length - 1]!;
+        activeSocialLink = first;
+        const xFirst = first.offsetLeft;
+        const xLastEdge = last.offsetLeft + last.offsetWidth;
+        const totalSpan = xLastEdge - xFirst;
+        const targetW = 52 * wf;
+
+        import("gsap").then(({ gsap }) => {
+          dom.social.classList.add("social-lines-animated");
+          gsap.killTweensOf(dom.sline);
+          dom.sline.style.transition = "none";
+
+          const socProxy = { head: 100, tail: 0 };
+          const finalTail = Math.max(0, 100 - (targetW / totalSpan) * 100);
+          gsap.set(dom.sline, { left: xFirst, width: totalSpan, scaleX: 1, x: 0, opacity: 1, clipPath: "inset(0% 0% 0% 100%)" });
+
+          const dur = introLinesDurationMs() / 1000;
+
+          const tl = gsap.timeline({
+            onComplete: () => {
+              gsap.set(dom.sline, { clearProps: "all" });
+              dom.sline.style.transition = "none";
+              if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
+              void dom.sline.offsetHeight;
+              dom.sline.style.transition = "";
+            }
+          });
+
+          tl.to(socProxy, { head: 0, duration: dur * 0.65, ease: "power3.inOut", onUpdate: () => dom.sline.style.clipPath = `inset(0% ${socProxy.tail}% 0% ${socProxy.head}%)` }, 0)
+            .to(socProxy, { tail: finalTail, duration: dur * 0.55, ease: "power3.out", onUpdate: () => dom.sline.style.clipPath = `inset(0% ${socProxy.tail}% 0% ${socProxy.head}%)` }, dur * 0.3);
+
+          const socIcons = dom.social.querySelectorAll(".soc");
+          if (socIcons.length > 0) {
+            gsap.killTweensOf(socIcons);
+            gsap.fromTo(socIcons, { opacity: 0 }, {
+              opacity: 0.45,
+              duration: 0.5,
+              stagger: -0.15,
+              ease: "expo.out",
+              delay: dur * 0.065, 
+              clearProps: "opacity"
+            });
+          }
+        });
+      } else {
+         dom.social.classList.add("social-lines-animated");
+         if (activeSocialLink) positionSocialLine(activeSocialLink, wf);
+      }
     }
 
     links.forEach((el) => {
@@ -798,6 +958,8 @@ export function startExperience() {
       if (!introActive) return;
       if (exploreCommitPending) return;
       exploreCommitPending = true;
+      dom.introLeft.classList.remove("lines-animated"); 
+      dom.social.classList.remove("social-lines-animated");
       dom.social.classList.add("hidden");
       if (introLineRevealTimer !== undefined) {
         clearTimeout(introLineRevealTimer);
@@ -827,7 +989,8 @@ export function startExperience() {
         dom.timeline.classList.remove("date-show");
         document.getElementById("year-lbl")?.classList.remove("date-show");
         dom.month.classList.remove("date-show");
-        dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
+        dom.introLeft.classList.remove("lines-animated");
+        dom.introRight.classList.remove("lines-animated");
         dom.introLeft.classList.add("hidden");
         dom.introRight.classList.add("hidden");
         dom.bgName.classList.add("hidden");
@@ -1008,11 +1171,6 @@ export function startExperience() {
       startupIntroSpinProgress = Math.min(1, elapsed / STARTUP_INTRO_SPIN_MS);
       if (startupIntroSpinProgress >= 1) {
         startupIntroSpinActive = false;
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            completeExploreReturnToIntroUi();
-          });
-        });
       }
     }
 
@@ -1051,10 +1209,6 @@ export function startExperience() {
       scrollVelVis = lerp(scrollVelVis, scrollVel, 0.1);
     }
 
-    const startupSpinBlend =
-      introActive && startupIntroSpinActive
-        ? startupApproachSettle01(startupIntroSpinProgress)
-        : { approach: 1, settle: 1 };
     let camX = 0;
     let camY = 0.5;
     let camLookAtY = 0.3;
@@ -1062,7 +1216,8 @@ export function startExperience() {
     if (introActive && startupIntroSpinActive) {
       // Single continuous arc (C1-smooth) to avoid jerk at segment boundaries.
       const x = smootherstep01(startupIntroSpinProgress);
-      const theta = lerp(-2.45, -0.12, x);
+      // End at exactly 0.0 to match the idle camera defaults (0, 0.5, 11)
+      const theta = lerp(-2.45, 0, x);
       const radius = lerp(12.9, 11.0, x);
       camX = Math.sin(theta) * radius;
       camZ = Math.cos(theta) * radius;
@@ -1142,43 +1297,24 @@ export function startExperience() {
         if (introActive && startupIntroSpinActive) {
           // Multi-shot startup: camera reveals details, figure rotates gently.
           const x = smootherstep01(startupIntroSpinProgress);
-          const mainTurn = lerp(Math.PI * 1.9, 0, x);
-          const tailSettle = Math.sin(x * Math.PI) * (1 - x) * 0.06;
-          const spin = mainTurn + tailSettle;
-          const startupScale = lerp(
-            lerp(
-              STARTUP_INTRO_MODEL_SCALE_FROM,
-              STARTUP_INTRO_MODEL_SCALE_OVERSHOOT,
-              startupSpinBlend.approach,
-            ),
-            2.6,
-            startupSpinBlend.settle,
-          );
-          const startupY = lerp(
-            lerp(
-              STARTUP_INTRO_MODEL_Y_FROM,
-              STARTUP_INTRO_MODEL_Y_OVERSHOOT,
-              startupSpinBlend.approach,
-            ),
-            -0.8,
-            startupSpinBlend.settle,
-          );
-          const startupZ = lerp(
-            lerp(
-              STARTUP_INTRO_MODEL_Z_FROM,
-              STARTUP_INTRO_MODEL_Z_OVERSHOOT,
-              startupSpinBlend.approach,
-            ),
-            0,
-            startupSpinBlend.settle,
-          );
+          const spin = lerp(Math.PI * 1.9, 0, x);
+          
+          const startupScale = lerp(STARTUP_INTRO_MODEL_SCALE_FROM, 2.6, x);
+          const startupY = lerp(STARTUP_INTRO_MODEL_Y_FROM, -0.8, x);
+          const startupZ = lerp(STARTUP_INTRO_MODEL_Z_FROM, 0, x);
+          
+          // Smoother breathing: start fading in the idle motion as the spin settles
+          const breathing = Math.sin(t * 0.6) * 0.015 * x;
+
           figRotY = 0;
-          figPosY = startupY;
+          figPosY = startupY; // Keep base position clean
           figScale = startupScale;
+          
           figureGroup.rotation.x = 0;
           figureGroup.rotation.y = spin;
-          figureGroup.position.set(0, startupY, startupZ);
-          figureGroup.scale.setScalar(startupScale);
+          // Apply breathing only at the point of setting, just like the idle loop does
+          figureGroup.position.set(0, figPosY + breathing, startupZ);
+          figureGroup.scale.setScalar(figScale);
         } else if (!introActive && experienceEntryProgress < 1) {
           const endSn = entryScrollTo / (N - 1);
           const baseRotAtEnd = endSn * -Math.PI * 2;
@@ -1386,6 +1522,8 @@ export function startExperience() {
 
   function completeExploreReturnToIntroUi() {
     dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
+    dom.introRight.classList.remove("lines-animated");
+    dom.social.classList.remove("social-lines-animated");
     void dom.introLeft.offsetHeight;
     dom.introLeft.classList.remove("hidden");
     dom.introRight.classList.remove("hidden");
@@ -1431,6 +1569,7 @@ export function startExperience() {
       if (figureGroup) {
         startupIntroSpinStartMs = performance.now();
         startupIntroSpinActive = true;
+        completeExploreReturnToIntroUi();
       } else {
         scheduleIntroLinesWhenUiVisible();
       }
