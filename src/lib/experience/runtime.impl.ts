@@ -217,6 +217,7 @@ export function startExperience() {
 
   // Models (concurrent)
   let figureGroup: THREE.Group | null = null;
+  const fogParticles: THREE.Sprite[] = [];
   const clayMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     roughness: 0.95,
@@ -374,6 +375,41 @@ export function startExperience() {
     rock.scene.scale.setScalar(3.9);
     rock.scene.position.y = -1.5;
     group.add(rock.scene);
+
+    // Fog particles under rock
+    const texLoader = new THREE.TextureLoader();
+    const fogTex = texLoader.load("/fog-particle.png");
+    for (let i = 0; i < 22; i++) {
+      const fogMat = new THREE.SpriteMaterial({
+        map: fogTex,
+        transparent: true,
+        opacity: 0, 
+        color: 0xffffff,
+        depthWrite: false,
+        blending: THREE.NormalBlending,
+      });
+      const s = new THREE.Sprite(fogMat);
+      s.renderOrder = 100;
+      // Depth-aware wrapping (bo): variety in distance and height
+      const scale = 3.5 + Math.random() * 4.5;
+      s.scale.set(scale, scale, 1);
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 0.5 + Math.random() * 6.5; // Closer proximity for "in front" overlap
+      s.position.set(
+        Math.cos(angle) * dist,
+        -1.3 - Math.random() * 1.0, // Higher range to overlap rock foundation
+        Math.sin(angle) * dist
+      );
+      // Truly static properties
+      (s as any)._rot = Math.random() * Math.PI * 2;
+      (s as any)._vRot = 0; 
+      (s as any)._basePos = s.position.clone();
+      (s as any)._seed = Math.random() * 10;
+      (s as any)._baseOp = 0.01 + Math.random() * 0.02; // Absolute transparency
+      
+      group.add(s);
+      fogParticles.push(s);
+    }
 
     group.position.set(0, -0.8, 0);
     group.scale.setScalar(2.6);
@@ -540,7 +576,7 @@ export function startExperience() {
   /** First reveal after loading: spin figure one turn, then show intro lines. */
   let startupIntroSpinActive = false;
   let startupIntroSpinStartMs = 0;
-  const STARTUP_INTRO_SPIN_MS = 6800;
+  const STARTUP_INTRO_SPIN_MS = 2800;
   const STARTUP_INTRO_MODEL_SCALE_FROM = 1.75;
   const STARTUP_INTRO_MODEL_Y_FROM = -1.24;
   const STARTUP_INTRO_MODEL_Z_FROM = -1.35;
@@ -678,15 +714,28 @@ export function startExperience() {
         if (startupIntroSpinActive) {
             // Delay Intro Left so it finishes EXACTLY with the 6800ms spin
             globalDelay = Math.max(0, (STARTUP_INTRO_SPIN_MS / 1000) - sequenceLength);
+        } else if (experienceExitActive) {
+            // Delay Intro Left so it finishes EXACTLY with the 2650ms exit
+            globalDelay = Math.max(0, (EXPERIENCE_EXIT_MS / 1000) - sequenceLength);
         }
 
         // 2. Timeline Trigger Points
         const t_ruleStart = globalDelay;
         const t_words = t_ruleStart + (duration * 0.65);
         const t_wordsEnd = t_words + wordsTotalSecs;
-        const t_exploreLine = t_wordsEnd;
+        const t_exploreLine = t_words;
         const t_exploreLineEnd = t_exploreLine + (duration * 0.85);
         const t_exploreText = t_exploreLineEnd - exploreTextTotalSecs;
+
+        // --- CLEAR stale inline styles from any previous exit animation ---
+        const staleWords = dom.introLeft.querySelectorAll(".intro-word");
+        if (staleWords.length > 0) gsap.set(staleWords, { clearProps: "opacity,transform,y" });
+        const staleExploreChars = dom.exploreBtn?.querySelectorAll(".explore-char");
+        if (staleExploreChars && staleExploreChars.length > 0) gsap.set(staleExploreChars, { clearProps: "opacity,transform,y" });
+        const staleUnderline = document.getElementById("explore-underline");
+        if (staleUnderline) gsap.set(staleUnderline, { clearProps: "x,opacity" });
+        const staleIntroRule = document.getElementById("intro-rule");
+        if (staleIntroRule) gsap.set(staleIntroRule, { clearProps: "opacity,scaleX,transform" });
 
         // --- PREP PHASE: Set all zero-states BEFORE lifting CSS guards ---
         
@@ -712,7 +761,7 @@ export function startExperience() {
 
         let totalSpan = 0;
         let socTargetW = 0;
-        if (links.length >= 2) {
+        if (links.length >= 2 && !experienceExitActive) {
           totalSpan = xLastEdge - xFirst;
           socTargetW = 52 * wf;
           gsap.killTweensOf(dom.sline);
@@ -723,11 +772,13 @@ export function startExperience() {
         const rightText = document.getElementById("intro-right-text");
         if (rightText) gsap.set(rightText, { opacity: 0 });
 
-        if (dom.bgName) gsap.set(dom.bgName, { opacity: 0 });
         
         const readMore = document.getElementById("read-more");
         if (readMore) gsap.set(readMore, { opacity: 0 });
         
+        const bgChars = dom.bgName ? dom.bgName.querySelectorAll(".bg-char") : [];
+        if (bgChars.length > 0) gsap.set(bgChars, { opacity: 0, filter: "blur(8px)" });
+
         if (exploreChars.length > 0) gsap.set(exploreChars, { opacity: 0 });
 
         // --- REVEAL PHASE: Lift CSS guards now that inline styles are set ---
@@ -773,7 +824,7 @@ export function startExperience() {
         }
 
         // 3. Social line (Worm Chase + Flash Fix)
-        if (links.length >= 2) {
+        if (links.length >= 2 && !experienceExitActive) {
           const socProxy = { head: 100, tail: 0 };
           const finalTail = Math.max(0, 100 - (socTargetW / totalSpan) * 100);
           const tl_soc = gsap.timeline({
@@ -801,14 +852,38 @@ export function startExperience() {
               clearProps: "opacity"
             });
           }
-        } else if (links.length === 1) {
+        } else if (links.length === 1 || (links.length >= 2 && experienceExitActive)) {
           dom.social.classList.add("social-lines-animated");
         }
 
         // 4. Text reveals
         if (dom.bgName) {
-            const bgDelay = startupIntroSpinActive ? (STARTUP_INTRO_SPIN_MS / 1000) : 0;
-            gsap.to(dom.bgName, { opacity: 1, duration: 1.8, ease: "power2.out", clearProps: "opacity", delay: bgDelay });
+            const lines = dom.bgName.querySelectorAll(".bg-name-text");
+            let bgDelay = 0;
+            if (startupIntroSpinActive) {
+              bgDelay = STARTUP_INTRO_SPIN_MS / 1000;
+            } else if (experienceExitActive) {
+              bgDelay = EXPERIENCE_EXIT_MS / 1000;
+            }
+            
+            lines.forEach((line) => {
+              const chars = line.querySelectorAll(".bg-char");
+              if (chars.length > 0) {
+                gsap.killTweensOf(chars);
+                gsap.fromTo(chars,
+                  { opacity: 0, filter: "blur(8px)" },
+                  {
+                    opacity: 1,
+                    filter: "blur(0px)",
+                    duration: 1.4,
+                    stagger: 0.06,
+                    ease: "power3.out",
+                    delay: bgDelay,
+                    clearProps: "opacity,filter"
+                  }
+                );
+              }
+            });
         }
         
         const words = dom.introLeft.querySelectorAll(".intro-word");
@@ -958,17 +1033,10 @@ export function startExperience() {
       if (!introActive) return;
       if (exploreCommitPending) return;
       exploreCommitPending = true;
-      dom.introLeft.classList.remove("lines-animated"); 
-      dom.social.classList.remove("social-lines-animated");
-      dom.social.classList.add("hidden");
       if (introLineRevealTimer !== undefined) {
         clearTimeout(introLineRevealTimer);
         introLineRevealTimer = undefined;
       }
-      const waitMs = Math.max(
-        0,
-        Math.ceil(introLinesAnimEndMs - performance.now()),
-      );
       const proceed = () => {
         exploreCommitTimer = undefined;
         exploreCommitPending = false;
@@ -1005,17 +1073,63 @@ export function startExperience() {
           timelineRevealTimer = undefined;
           timelineDatesVisible = true;
           dom.timeline.classList.add("date-show");
-          dom.social.classList.remove("hidden");
-          replaySocialLineEffect();
           document.getElementById("year-lbl")?.classList.add("date-show");
           dom.month.classList.add("date-show");
         }, EXPERIENCE_ENTRY_MS);
       };
-      if (waitMs > 0) {
-        exploreCommitTimer = window.setTimeout(proceed, waitMs);
-      } else {
-        proceed();
-      }
+
+      import("gsap").then(({ gsap }) => {
+        const words = dom.introLeft.querySelectorAll(".intro-word");
+        const introLine = document.getElementById("intro-rule");
+        const exploreUnderline = document.getElementById("explore-underline");
+        const exploreChars = dom.exploreBtn?.querySelectorAll(".explore-char");
+        const rightText = document.getElementById("intro-right-text");
+        const readMore = document.getElementById("read-more");
+
+        const tl = gsap.timeline({ onComplete: proceed });
+
+        // 1. Text intro chỉ cần ẩn
+        if (words.length > 0) tl.to(words, { opacity: 0, duration: 0.3 }, 0);
+        if (rightText) tl.to(rightText, { opacity: 0, duration: 0.3 }, 0);
+        if (readMore) tl.to(readMore, { opacity: 0, duration: 0.3 }, 0);
+
+        // 2. Line intro từ phải co nhỏ lại (anchors left, so right side shrinks towards left)
+        if (introLine) {
+          gsap.killTweensOf(introLine);
+          gsap.set(introLine, { transformOrigin: "0% 50%" });
+          tl.to(introLine, { scaleX: 0, opacity: 0, duration: 0.4, ease: "power2.inOut" }, 0.2);
+        }
+
+        // 3. Line explore dài sang phải rồi worm-chase thu lại từ trái sang phải
+        if (exploreUnderline) {
+          gsap.killTweensOf(exploreUnderline);
+          const lineDur = 0.6;
+          const retractProxy = { tail: 0, x: 0 };
+          gsap.set(exploreUnderline, { clearProps: "x,opacity,clipPath", clipPath: "inset(0% 0% 0% 0%)" });
+          // Di chuyển line sang phải +160px đồng thời tail đuổi head
+          tl.to(retractProxy, {
+            tail: 100,
+            x: 70,
+            duration: lineDur,
+            ease: "power2.inOut",
+            onUpdate: () => {
+              exploreUnderline.style.clipPath = `inset(0% 0% 0% ${retractProxy.tail}%)`;
+              exploreUnderline.style.transform = `translateX(${retractProxy.x}px)`;
+            },
+            onComplete: () => {
+              gsap.set(exploreUnderline, { opacity: 0, clearProps: "clipPath,transform" });
+            }
+          }, 0.2);
+        }
+        // Explore chars: khi line gần tới chữ E (70% qua retraction = 0.2 + 0.55*0.7 ≈ 0.58s)
+        // chạy hiệu ứng như lúc loading: stagger từ trái sang phải rồi mờ dần
+        if (exploreChars && exploreChars.length > 0) {
+          gsap.killTweensOf(exploreChars);
+          const charFadeDelay = 0.2 + 0.55 * 0.65;
+          tl.to(exploreChars, { opacity: 0, duration: 0.25, stagger: 0.025, ease: "power2.inOut" }, charFadeDelay);
+        }
+
+      });
     };
 
     const returnToExploreIntro = () => {
@@ -1035,7 +1149,6 @@ export function startExperience() {
         introLineRevealTimer = undefined;
       }
       dom.timeline.classList.remove("date-show");
-      dom.social.classList.add("hidden");
       document.getElementById("year-lbl")?.classList.remove("date-show");
       dom.month.classList.remove("date-show");
       lastMonthIndex = null;
@@ -1071,6 +1184,9 @@ export function startExperience() {
       scrollVel = 0;
       scrollVelVis = 0;
       scrollTarget = 0;
+      
+      // Start revealing intro elements immediately so they finish with the exit animation
+      completeExploreReturnToIntroUi();
     };
 
     dom.exploreBtn.addEventListener("click", enterExperience);
@@ -1229,6 +1345,19 @@ export function startExperience() {
     cam.lookAt(0, camLookAtY, 0);
 
     const t = Date.now() * 0.001;
+    for (const s of fogParticles) {
+      const data = s as any;
+      // Static: no rotation, no drifting
+      s.position.copy(data._basePos);
+      s.material.rotation = data._rot; 
+
+      // Reliable slow fade in
+      if (s.material.opacity < data._baseOp) {
+        s.material.opacity = Math.min(data._baseOp, s.material.opacity + 0.005);
+      } else {
+        s.material.opacity = data._baseOp;
+      }
+    }
     const entryScrollBlend =
       !introActive && experienceEntryProgress < 1
         ? smootherstep01(experienceEntryProgress)
@@ -1256,7 +1385,7 @@ export function startExperience() {
         }
       } else if (introActive && startupIntroSpinActive) {
         const blend = smootherstep01(startupIntroSpinProgress);
-        yaw = lerp(-TAU * 1.35, 0, blend);
+        yaw = lerp(-TAU * 0.25, 0, blend);
       } else if (!introActive && experienceEntryProgress < 1) {
         // Entry: bg xoay theo chiều dương (ngược model để đúng hướng)
         const endSn = entryScrollTo / (N - 1);
@@ -1297,7 +1426,7 @@ export function startExperience() {
         if (introActive && startupIntroSpinActive) {
           // Multi-shot startup: camera reveals details, figure rotates gently.
           const x = smootherstep01(startupIntroSpinProgress);
-          const spin = lerp(Math.PI * 1.9, 0, x);
+          const spin = lerp(Math.PI * 0.6, 0, x);
           
           const startupScale = lerp(STARTUP_INTRO_MODEL_SCALE_FROM, 2.6, x);
           const startupY = lerp(STARTUP_INTRO_MODEL_Y_FROM, -0.8, x);
@@ -1505,11 +1634,6 @@ export function startExperience() {
       scrollVel = 0;
       scrollVelVis = 0;
       dom.tlProgress.style.width = "0%";
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          completeExploreReturnToIntroUi();
-        });
-      });
     }
 
     bg.render();
@@ -1523,12 +1647,10 @@ export function startExperience() {
   function completeExploreReturnToIntroUi() {
     dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
     dom.introRight.classList.remove("lines-animated");
-    dom.social.classList.remove("social-lines-animated");
     void dom.introLeft.offsetHeight;
     dom.introLeft.classList.remove("hidden");
     dom.introRight.classList.remove("hidden");
     dom.bgName.classList.remove("hidden");
-    dom.social.classList.remove("hidden");
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         experienceEvents.runIntroPageLineEffects();
@@ -1550,7 +1672,6 @@ export function startExperience() {
       dom.introLeft.classList.add("hidden");
       dom.introRight.classList.add("hidden");
       dom.bgName.classList.add("hidden");
-      dom.social.classList.add("hidden");
       document.documentElement.classList.remove("experience-loading");
       dom.bgName.classList.add("model-ready");
       dom.modelLoadPct.setAttribute("aria-busy", "false");

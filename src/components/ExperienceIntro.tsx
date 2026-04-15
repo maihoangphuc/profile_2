@@ -9,8 +9,34 @@ export default function ExperienceIntro() {
     <>
       <div id="bg-name">
         <div>
-          <div className="bg-name-text text-web-name">Hoang</div>
-          <div className="bg-name-text text-web-name">Phuc</div>
+          <div className="bg-name-text text-web-name">
+            {"Hoang".split("").map((c, i) => (
+              <span
+                key={i}
+                className="bg-char"
+                style={{
+                  opacity: 0,
+                  filter: "blur(8px)",
+                }}
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+          <div className="bg-name-text text-web-name">
+            {"Phuc".split("").map((c, i) => (
+              <span
+                key={i}
+                className="bg-char"
+                style={{
+                  opacity: 0,
+                  filter: "blur(8px)",
+                }}
+              >
+                {c}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 

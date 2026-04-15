@@ -144,21 +144,29 @@ html.experience-loading #model-load-pct {
   animation: none;
   transform-style: preserve-3d;
   will-change: transform;
-  opacity: 0;
-  transition: opacity 0.9s ease;
+  opacity: 1;
   margin-top: 15px;
 }
 
-.bg-name-text {
+.bg-name-text,
+.bg-char {
   font-family:
     "Blaak", var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
   font-weight: 700;
-  font-size: clamp(90px, 20vw, 130px);
   line-height: 1;
   white-space: nowrap;
   user-select: none;
   animation: none;
   letter-spacing: 10px;
+}
+
+.bg-name-text {
+  font-size: clamp(90px, 20vw, 160px);
+}
+
+.bg-char {
+  font-size: inherit;
+  display: inline-block;
 }
 
 .bg-name-text:nth-child(1) {
@@ -171,10 +179,6 @@ html.experience-loading #model-load-pct {
 
 #bg-name.hidden {
   opacity: 0;
-}
-
-#bg-name.model-ready > div {
-  opacity: 1;
 }
 
 #bg-name.model-ready > div {
