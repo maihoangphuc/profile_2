@@ -7,12 +7,13 @@ export function enterExperience(ctx: RuntimeContext) {
   const { dom, state, animFlags, timers } = ctx;
   if (!state.introActive || animFlags.exploreCommitPending) return;
   animFlags.exploreCommitPending = true;
-  dom.social.classList.add("hidden");
+  dom.introLeft.classList.add("intro-lines-exit");
+  dom.introLeft.classList.remove("intro-lines-reveal");
   if (timers.introLineReveal !== undefined) {
     clearTimeout(timers.introLineReveal);
     timers.introLineReveal = undefined;
   }
-  const waitMs = Math.max(0, Math.ceil(animFlags.introLinesAnimEndMs - performance.now()));
+
   const proceed = () => {
     timers.exploreCommit = undefined;
     animFlags.exploreCommitPending = false;
@@ -48,13 +49,16 @@ export function enterExperience(ctx: RuntimeContext) {
       timers.timelineReveal = undefined;
       state.timelineDatesVisible = true;
       dom.timeline.classList.add("date-show");
-      dom.social.classList.remove("hidden");
       replaySocialLineEffect(ctx);
       document.getElementById("year-lbl")?.classList.add("date-show");
       dom.month.classList.add("date-show");
     }, EXPERIENCE_ENTRY_MS);
   };
-  if (waitMs > 0) timers.exploreCommit = window.setTimeout(proceed, waitMs);
+
+  const waitMs = Math.max(0, Math.ceil(animFlags.introLinesAnimEndMs - performance.now()));
+  const totalWait = Math.max(waitMs, 800);
+
+  if (totalWait > 0) timers.exploreCommit = window.setTimeout(proceed, totalWait);
   else proceed();
 }
 
@@ -76,7 +80,6 @@ export function returnToExploreIntro(ctx: RuntimeContext) {
     timers.introLineReveal = undefined;
   }
   dom.timeline.classList.remove("date-show");
-  dom.social.classList.add("hidden");
   document.getElementById("year-lbl")?.classList.remove("date-show");
   dom.month.classList.remove("date-show");
   state.lastMonthIndex = null;
@@ -112,12 +115,11 @@ export function returnToExploreIntro(ctx: RuntimeContext) {
 
 export function completeExploreReturnToIntroUi(ctx: RuntimeContext) {
   const { dom } = ctx;
-  dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated");
+  dom.introLeft.classList.remove("intro-lines-reveal", "lines-animated", "intro-lines-exit");
   void dom.introLeft.offsetHeight;
   dom.introLeft.classList.remove("hidden");
   dom.introRight.classList.remove("hidden");
   dom.bgName.classList.remove("hidden");
-  dom.social.classList.remove("hidden");
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       runIntroPageLineEffects(ctx);

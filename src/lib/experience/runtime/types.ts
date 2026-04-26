@@ -106,6 +106,7 @@ export type RuntimeContext = {
   animFlags: {
     introLinesAnimEndMs: number;
     exploreCommitPending: boolean;
+    socialLineAnimated: boolean;
   };
   events: any;
 };

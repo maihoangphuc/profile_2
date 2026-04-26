@@ -263,6 +263,27 @@ html.experience-loading #model-load-pct {
   animation: text-fade-in 0.3s 0.5s both;
 }
 
+#intro-left.intro-lines-exit #intro-rule {
+  width: 100%;
+  opacity: 1;
+  animation: intro-rule-exit 0.6s cubic-bezier(0.32, 0, 0.67, 0) forwards;
+}
+
+#intro-left.intro-lines-exit #intro-desc {
+  opacity: 1;
+  animation: intro-text-exit 0.8s cubic-bezier(0.32, 0, 0.67, 0) forwards !important;
+}
+
+#intro-left.intro-lines-exit #explore-btn .char {
+  opacity: 1;
+  animation: char-exit 0.6s both;
+  animation-delay: calc(var(--char-index) * 0.03s);
+}
+
+#intro-left.intro-lines-exit #explore-btn::after {
+  animation: explore-underline-exit 0.6s cubic-bezier(0.32, 0, 0.67, 0) forwards !important;
+}
+
 #explore-btn .char {
   display: inline-block;
   opacity: 0;
@@ -464,6 +485,7 @@ html.experience-loading #model-load-pct {
 }
 
 #social.social-lines-animated.social-line-entry #sline {
+  width: 100%;
   transition: none;
   animation: social-line-draw var(--intro-lines-duration)
     var(--intro-lines-ease) forwards;

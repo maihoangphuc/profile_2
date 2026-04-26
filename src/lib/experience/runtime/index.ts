@@ -46,6 +46,7 @@ export function startExperience() {
     animFlags: {
       introLinesAnimEndMs: 0,
       exploreCommitPending: false,
+      socialLineAnimated: false,
     },
     events: null,
   };
