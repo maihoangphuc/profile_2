@@ -41,7 +41,10 @@ export function createAnimateLoop(ctx: RuntimeContext) {
     if (state.experienceEntryActive) {
       const elapsed = performance.now() - state.experienceEntryStartMs;
       experienceEntryProgress = Math.min(1, elapsed / EXPERIENCE_ENTRY_MS);
-      if (experienceEntryProgress >= 1) state.experienceEntryActive = false;
+      if (experienceEntryProgress >= 1) {
+        state.experienceEntryActive = false;
+        state.scrollCurrent = state.entryScrollTo;
+      }
     }
 
     let exitProgress = 0;

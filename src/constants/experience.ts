@@ -197,7 +197,7 @@ export const PATH: PathPoint[] = [
     op: 0.88,
     cv: 0.22,
   },
-  { x: 0.0, y: 0.1, z: 4.9, rx: 0.0, rz: 0.0, W: PW, H: PH, op: 1.0, cv: 0.0 },
+  { x: -0.4, y: 0.3, z: 4.9, rx: 0.0, rz: 0.0, W: PW, H: PH, op: 1.0, cv: 0.0 },
   {
     x: -6.2,
     y: 3.2,
