@@ -22,7 +22,17 @@ export default function ExperienceIntro() {
           {INTRO_DESCRIPTION}
         </div>
         <button id="explore-btn" className="text-web-white" type="button">
-          Explore
+          <span className="explore-text-wrapper">
+            {"Explore".split("").map((char, i) => (
+              <span
+                key={i}
+                className="char"
+                style={{ "--char-index": i } as React.CSSProperties}
+              >
+                {char === " " ? "\u00A0" : char}
+              </span>
+            ))}
+          </span>
         </button>
       </div>
 

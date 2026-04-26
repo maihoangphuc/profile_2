@@ -84,7 +84,9 @@ body {
   transition: opacity 0.85s ease;
 }
 
-html.experience-loading #bg {
+html.experience-loading #bg,
+html.experience-loading #c,
+html.experience-loading #particles {
   opacity: 0;
   pointer-events: none;
 }
@@ -247,6 +249,31 @@ html.experience-loading #model-load-pct {
   margin-bottom: 25px;
   width: 100%;
   padding-left: 2rem;
+  opacity: 0; /* Hidden by default */
+}
+
+/* Sequence: Rule (1.0s) -> Text starts at 0.9s (90%) -> Explore Line & Social Line start at 1.3s */
+#intro-left.intro-lines-reveal #intro-rule {
+  width: 100%;
+  animation: intro-rule-draw 1.0s both;
+}
+
+#intro-left.intro-lines-reveal #intro-desc {
+  /* Fast 0.3s reveal starts at 0.5s */
+  animation: text-fade-in 0.3s 0.5s both;
+}
+
+#explore-btn .char {
+  display: inline-block;
+  opacity: 0;
+  white-space: pre;
+}
+
+#intro-left.intro-lines-reveal #explore-btn .char {
+  animation: char-reveal 0.4s both;
+  /* Sync with Line: Line starts at 0.7s, reaches text at ~0.9s. 
+     Stays visible until 1.7s. */
+  animation-delay: calc(1.0s + var(--char-index) * 0.07s);
 }
 
 #explore-btn {
@@ -263,13 +290,14 @@ html.experience-loading #model-load-pct {
   position: relative;
   align-self: flex-end;
   text-align: right;
+  overflow: visible;
 }
 
 #explore-btn::after {
   content: "";
   display: block;
   font-family: inherit;
-  width: calc(100% + 2.75rem);
+  width: calc(100% + 2.75rem); /* Restored original length */
   height: 1px;
   background: var(--color-web-label);
   position: absolute;
@@ -277,15 +305,12 @@ html.experience-loading #model-load-pct {
   right: 0;
   left: auto;
   opacity: 0.45;
-  transform: translateX(0) scaleX(1);
   transform-origin: left bottom;
-  transition:
-    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
-    background 0.3s ease;
 }
 
 #intro-left.intro-lines-reveal #explore-btn::after {
-  animation: explore-underline-draw var(--intro-lines-duration) both;
+  /* Starts early (at 0.7s) while text is finishing */
+  animation: explore-underline-draw 1.0s 0.7s both;
 }
 
 #explore-btn:hover::after {
