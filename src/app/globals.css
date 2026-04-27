@@ -21,6 +21,7 @@
   --palette-web-scene-neutral: #ffffff;
   /* Ba line: cùng --intro-lines-duration / --intro-lines-ease → kết thúc đồng thời */
   --intro-lines-duration: 2.5s;
+  --social-line-duration: 1.4s;
   --intro-lines-ease: cubic-bezier(0.33, 1, 0.32, 1);
 }
 
@@ -485,7 +486,7 @@ html.experience-loading #model-load-pct {
   transform-origin: left center;
   will-change: transform, opacity;
   transition:
-    transform 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.25s ease;
   pointer-events: none;
 }
@@ -497,7 +498,7 @@ html.experience-loading #model-load-pct {
 #social.social-lines-animated.social-line-entry #sline {
   width: 100%;
   transition: none;
-  animation: social-line-draw var(--intro-lines-duration)
+  animation: social-line-draw var(--social-line-duration)
     var(--intro-lines-ease) forwards;
 }
 
@@ -515,10 +516,15 @@ html.experience-loading #model-load-pct {
   text-decoration: none;
   outline: none;
   padding: 0 12px;
+  color: var(--color-web-soft);
+  transition:
+    color 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .soc:hover {
-  opacity: 0.85;
+  opacity: 1;
+  color: var(--color-web-white);
 }
 
 .soc:focus {
