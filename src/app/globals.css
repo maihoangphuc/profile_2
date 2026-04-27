@@ -255,7 +255,7 @@ html.experience-loading #model-load-pct {
 /* Sequence: Rule (1.0s) -> Text starts at 0.9s (90%) -> Explore Line & Social Line start at 1.3s */
 #intro-left.intro-lines-reveal #intro-rule {
   width: 100%;
-  animation: intro-rule-draw 1.0s both;
+  animation: intro-rule-draw 1s both;
 }
 
 #intro-left.intro-lines-reveal #intro-desc {
@@ -294,7 +294,7 @@ html.experience-loading #model-load-pct {
   animation: char-reveal 0.4s both;
   /* Sync with Line: Line starts at 0.7s, reaches text at ~0.9s. 
      Stays visible until 1.7s. */
-  animation-delay: calc(1.0s + var(--char-index) * 0.07s);
+  animation-delay: calc(1s + var(--char-index) * 0.07s);
 }
 
 #explore-btn {
@@ -327,11 +327,16 @@ html.experience-loading #model-load-pct {
   left: auto;
   opacity: 0.45;
   transform-origin: left bottom;
+  transition:
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.3s ease,
+    background-color 0.3s ease,
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 #intro-left.intro-lines-reveal #explore-btn::after {
   /* Starts early (at 0.7s) while text is finishing */
-  animation: explore-underline-draw 1.0s 0.7s both;
+  animation: explore-underline-draw 1s 0.7s both;
 }
 
 #explore-btn:hover::after {
@@ -478,10 +483,15 @@ html.experience-loading #model-load-pct {
   top: -12px;
   transform: translateX(0);
   transform-origin: left center;
+  will-change: transform, opacity;
   transition:
-    transform var(--intro-lines-duration) var(--intro-lines-ease),
-    opacity 0.45s ease;
+    transform 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.25s ease;
   pointer-events: none;
+}
+
+#social.social-line-return #sline {
+  transition-duration: 0.9s, 0.25s;
 }
 
 #social.social-lines-animated.social-line-entry #sline {

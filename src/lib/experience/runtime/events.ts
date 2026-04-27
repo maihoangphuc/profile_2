@@ -18,18 +18,26 @@ export function bindEvents(
   let activeSocialLink = socDefault ?? links[0];
 
   links.forEach((el) => {
-    el.addEventListener("mouseenter", () => positionSocialLine(dom, el, 1));
+    el.addEventListener("mouseenter", () => {
+      dom.social.classList.remove("social-line-return");
+      activeSocialLink = el;
+      positionSocialLine(dom, activeSocialLink, 1);
+    });
     el.addEventListener("focus", () => {
+      dom.social.classList.remove("social-line-return");
       activeSocialLink = el;
       positionSocialLine(dom, activeSocialLink, 0.6);
     });
     el.addEventListener("pointerdown", () => {
+      dom.social.classList.remove("social-line-return");
       activeSocialLink = el;
       positionSocialLine(dom, activeSocialLink, 0.6);
     });
   });
 
   dom.social.addEventListener("mouseleave", () => {
+    dom.social.classList.add("social-line-return");
+    activeSocialLink = socDefault ?? links[0];
     if (activeSocialLink) positionSocialLine(dom, activeSocialLink, 0.6);
     dom.sline.style.opacity = "0.85";
   });

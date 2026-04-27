@@ -31,7 +31,10 @@ export function getDom(): Dom {
   };
 }
 
-export function canvasFont(sizePx: number, weight: number | "bold" = 400): string {
+export function canvasFont(
+  sizePx: number,
+  weight: number | "bold" = 400,
+): string {
   const stack = getComputedStyle(document.documentElement)
     .getPropertyValue(APP_FONT_CSS_VAR)
     .trim();
@@ -40,7 +43,11 @@ export function canvasFont(sizePx: number, weight: number | "bold" = 400): strin
   return `${w} ${sizePx}px ${family}`;
 }
 
-export function positionSocialLine(dom: Dom, target: HTMLElement, widthFactor = 1) {
+export function positionSocialLine(
+  dom: Dom,
+  target: HTMLElement,
+  widthFactor = 1,
+) {
   const x = target.offsetLeft;
   dom.sline.style.transform = `translateX(${x}px) scaleX(${widthFactor})`;
   dom.sline.style.opacity = "0.85";
