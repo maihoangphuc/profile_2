@@ -1,13 +1,13 @@
 import * as THREE from "three";
 import { RuntimeContext } from "@/lib/experience/runtime/types";
-import { C, MONTHS, N, PH, PW } from "@/constants/experience";
+import { C, MONTHS, N } from "@/constants/experience";
 import { EXPERIENCE_ENTRY_MS, EXPERIENCE_EXIT_MS, EXPERIENCE_EXIT_MIN_SCROLL_TRAVEL, EXPERIENCE_EXIT_SCROLL_DEEP_CAP, EXPERIENCE_EXIT_UNDERSHOOT_SPLIT, MONTH_SWITCH_COOLDOWN_MS } from "@/lib/experience/runtime/world";
-import { lerp, lerpPath, smootherstep01 } from "@/lib/experience/runtime/math";
+import { lerp, smootherstep01 } from "@/lib/experience/runtime/math";
 import { drawParticles } from "@/lib/experience/runtime/particles";
 import { completeExploreReturnToIntroUi } from "@/lib/experience/runtime/transitions";
 
 export function createAnimateLoop(ctx: RuntimeContext) {
-  const { dom, state, bg, scene, cam, renderer, raycaster, mouse, pCtx, pState, panels, figureGroup } = ctx;
+  const { dom, state, bg, scene, cam, renderer, raycaster, mouse, pCtx, pState, figureGroup } = ctx;
   let raf = 0;
 
   function animate() {
@@ -133,71 +133,21 @@ export function createAnimateLoop(ctx: RuntimeContext) {
         figureGroup.value.position.set(0, state.figPosY, 0);
         figureGroup.value.scale.setScalar(state.figScale);
       } else {
-        state.figRotY = lerp(state.figRotY, state.introActive ? 0 : sn * -Math.PI * 2, 0.08);
+        const modelRotTarget = state.introActive ? 0 : sn * -Math.PI * 2;
+        state.figRotY = modelRotTarget + state.scrollVelVis * -0.12;
         figureGroup.value.rotation.set(0, state.figRotY, 0);
-        state.figPosY = lerp(state.figPosY, state.introActive ? -0.8 : -0.8 - sn * 1.2, 0.04);
+
+        state.figPosY = state.introActive ? -0.8 : -0.8 - sn * 1.2;
         figureGroup.value.position.set(0, state.figPosY + Math.sin(t * 0.6) * 0.015, 0);
-        state.figScale = lerp(state.figScale, state.introActive ? 2.6 : 2.6 + sn * 0.6, 0.04);
+
+        state.figScale = state.introActive ? 2.6 : 2.6 + sn * 0.6;
         figureGroup.value.scale.setScalar(state.figScale);
       }
     }
 
-    const scrollForEdge = Math.max(0, Math.min(N - 1, scrollForLayout));
-    const edgeFade = Math.min(scrollForEdge / 0.3, (N - 1 - scrollForEdge) / 0.3, 1.0);
-    const stretchVal = Math.max(-1, Math.min(1, state.scrollVelVis * 45)) * edgeFade;
-
-    mouse.x = state.mouseX;
-    mouse.y = state.mouseY;
-    raycaster.setFromCamera(mouse, cam);
-    const visibleMeshes = panels.map(p => p.mesh).filter(m => m.visible);
-    const intersects = raycaster.intersectObjects(visibleMeshes);
-    const hoveredMesh = intersects.length > 0 ? (intersects[0].object as THREE.Mesh) : null;
     const centerIndex = Math.max(0, Math.min(N - 1, Math.round(scrollForLayout)));
 
     const exitHidePanels = state.experienceExitActive && exitProgress >= EXPERIENCE_EXIT_UNDERSHOOT_SPLIT;
-
-    panels.forEach((p, i) => {
-      p.hoverVal ??= 0;
-      p.targetHover = (p.mesh === hoveredMesh && !state.introActive && !state.experienceExitActive && i === centerIndex) ? 1 : 0;
-      p.hoverVal = lerp(p.hoverVal, p.targetHover, 0.1);
-      p.mat.uniforms.uHover.value = p.hoverVal;
-      p.mat.uniforms.uTime.value = t;
-      p.capMat.uniforms.uHover.value = p.hoverVal;
-      p.capMat.uniforms.uTime.value = t;
-
-      if (state.introActive || exitHidePanels) {
-        p.mesh.visible = false; p.capMesh.visible = false; return;
-      }
-
-      const spacing = 0.65;
-      const delta = (scrollForLayout - i) * spacing;
-      const step = C + delta;
-      if (step < -0.1 || step > 14.1) { p.mesh.visible = false; return; }
-
-      let fadeOp = 1;
-      if (step < 0.4) fadeOp = Math.max(0, step / 0.4);
-      if (step > 13.6) fadeOp = Math.max(0, (14 - step) / 0.4);
-
-      const tr = lerpPath(step);
-      if (tr.z > 0) tr.x += tr.x * (tr.z / 4.9) * 0.55;
-
-      const op = tr.op * fadeOp;
-      p.pivot.position.set(tr.x, tr.y, tr.z);
-      p.pivot.rotation.set(tr.rx, Math.atan2(tr.x, tr.z + 0.001), 0.6 * Math.min(1, Math.abs(step - C) / 3) * -1);
-      p.mat.uniforms.uOpacity.value = op;
-      p.mat.uniforms.uCurvature.value = tr.cv * 0.3;
-      p.mat.uniforms.uStretch.value = stretchVal;
-      p.mesh.scale.set(tr.W / PW, tr.H / PH, 1);
-      p.mesh.visible = op > 0.02;
-
-      const textOp = op * Math.max(0, 1.0 - Math.abs(step - C) * 3.0);
-      p.capMat.uniforms.uOpacity.value = textOp;
-      p.capMat.uniforms.uCurvature.value = tr.cv * 0.3;
-      p.capMat.uniforms.uStretch.value = stretchVal;
-      p.capMesh.scale.set(tr.W / PW, tr.H / PH, 1);
-      p.capMesh.position.z = 0.04 + Math.min(1, Math.abs(step - C) / 3) * 0.14;
-      p.capMesh.visible = textOp > 0.01;
-    });
 
     if (!state.introActive && !state.experienceExitActive) {
       const fi = centerIndex;

@@ -4,7 +4,6 @@ import { bindEvents } from "@/lib/experience/runtime/events";
 import { initScene } from "@/lib/experience/runtime/scene";
 import { initParticles, createParticlesState, resizeParticles } from "@/lib/experience/runtime/particles";
 import { loadModels } from "@/lib/experience/runtime/models";
-import { buildPanels } from "@/lib/experience/runtime/panels";
 import { getDom, positionSocialLine } from "@/lib/experience/runtime/ui";
 import { createExperienceState } from "@/lib/experience/runtime/world";
 import { RuntimeContext } from "@/lib/experience/runtime/types";
@@ -40,7 +39,6 @@ export function startExperience() {
     mouse,
     pCtx,
     pState,
-    panels: buildPanels(scene),
     figureGroup: { value: null },
     timers: {},
     animFlags: {

@@ -75,16 +75,6 @@ export type GretaBackground = {
   render: () => void;
 };
 
-export type PanelData = {
-  mesh: THREE.Mesh;
-  capMesh: THREE.Mesh;
-  mat: THREE.ShaderMaterial;
-  capMat: THREE.ShaderMaterial;
-  pivot: THREE.Group;
-  hoverVal?: number;
-  targetHover?: number;
-};
-
 export type RuntimeContext = {
   dom: Dom;
   state: State;
@@ -96,7 +86,6 @@ export type RuntimeContext = {
   mouse: THREE.Vector2;
   pCtx: CanvasRenderingContext2D;
   pState: any;
-  panels: PanelData[];
   figureGroup: { value: THREE.Group | null };
   timers: {
     introLineReveal?: number;
